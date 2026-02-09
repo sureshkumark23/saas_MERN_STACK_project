@@ -1,0 +1,14 @@
+# Ignore dependency folders
+node_modules/
+**/node_modules/
+
+# Ignore environment secrets
+.env
+**/.env
+
+# Ignore OS files
+.DS_Store
+
+# Ignore build folders
+dist/
+build/
