@@ -1,99 +1,221 @@
-import { motion } from "framer-motion";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Plus, Loader2, Mail, Shield, User as UserIcon } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserPlus, MoreHorizontal } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
-const members = [
-  { initials: "JD", name: "John Doe", email: "john@acme.com", role: "Owner", status: "Active" },
-  { initials: "SC", name: "Sarah Chen", email: "sarah@acme.com", role: "Admin", status: "Active" },
-  { initials: "MR", name: "Mike Ross", email: "mike@acme.com", role: "Member", status: "Active" },
-  { initials: "AL", name: "Amy Lee", email: "amy@acme.com", role: "Member", status: "Active" },
-  { initials: "KP", name: "Kate Park", email: "kate@acme.com", role: "Member", status: "Pending" },
-];
+// Define the shape of our Team Member data
+interface TeamMember {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: string;
+}
 
-const roleColors: Record<string, string> = {
-  Owner: "bg-primary/10 text-primary",
-  Admin: "bg-warning/10 text-warning",
-  Member: "bg-secondary text-secondary-foreground",
-};
+const TeamPage = () => {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
+  // Form State
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("member");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-export default function TeamPage() {
+  // Fetch team members when the page loads
+  const fetchTeam = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/team`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) throw new Error("Failed to fetch team members");
+      
+      const data = await response.json();
+      setMembers(data);
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTeam();
+  }, []);
+
+  // Handle inviting a new team member
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/team/invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, email, role }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.message || "Failed to invite member");
+
+      toast.success(`${name} has been added to the workspace!`);
+      setIsDialogOpen(false);
+      
+      // Reset form
+      setName("");
+      setEmail("");
+      setRole("member");
+      
+      // Refresh the team list
+      fetchTeam();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Helper to render role badges nicely
+  const RoleBadge = ({ role }: { role: string }) => {
+    switch(role) {
+      case 'owner': return <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100 border-none"><Shield className="h-3 w-3 mr-1"/> Owner</Badge>;
+      case 'admin': return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none"><Shield className="h-3 w-3 mr-1"/> Admin</Badge>;
+      default: return <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100 border-none"><UserIcon className="h-3 w-3 mr-1"/> Member</Badge>;
+    }
+  };
+
   return (
     <AppLayout>
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6 max-w-5xl mx-auto">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Team Members</h1>
-            <p className="text-muted-foreground text-sm">{members.length} members in workspace</p>
+            <h1 className="text-3xl font-bold tracking-tight">Team Management</h1>
+            <p className="text-gray-500 mt-2">Manage your workspace members and their roles.</p>
           </div>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-            <UserPlus className="h-4 w-4 mr-1" /> Invite User
-          </Button>
+
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center gap-2">
+                <Plus className="h-4 w-4" /> Invite Member
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Invite to Workspace</DialogTitle>
+                <CardDescription>
+                  Add a new member to your team. They will be granted access immediately.
+                </CardDescription>
+              </DialogHeader>
+              <form onSubmit={handleInviteMember} className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label>Full Name</Label>
+                  <Input 
+                    value={name} 
+                    onChange={(e) => setName(e.target.value)} 
+                    placeholder="e.g. Jane Doe"
+                    required 
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <Input 
+                    type="email"
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    placeholder="jane@company.com"
+                    required 
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Workspace Role</Label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin (Can manage projects & team)</SelectItem>
+                      <SelectItem value="member">Member (Can manage tasks)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <DialogFooter className="mt-6">
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">Cancel</Button>
+                  </DialogClose>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Inviting..." : "Send Invite"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
 
-        <Card className="border-border">
+        {/* Team Members List */}
+        <Card className="shadow-sm border-gray-200">
+          <CardHeader className="border-b bg-gray-50/50 pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <UserIcon className="h-5 w-5 text-gray-500" />
+              Active Members ({members.length})
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Member</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((m) => (
-                  <TableRow key={m.email}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs">{m.initials}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{m.name}</p>
-                          <p className="text-xs text-muted-foreground">{m.email}</p>
+            {isLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+              </div>
+            ) : (
+              <div className="divide-y">
+                {members.map((member) => (
+                  <div key={member._id} className="flex items-center justify-between p-4 sm:p-6 hover:bg-gray-50/50 transition-colors">
+                    <div className="flex items-center gap-4">
+                      {/* Avatar Placeholder */}
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold border border-primary/20">
+                        {member.name.charAt(0).toUpperCase()}
+                      </div>
+                      
+                      <div>
+                        <p className="font-semibold text-gray-900">{member.name}</p>
+                        <div className="flex items-center text-sm text-gray-500 mt-0.5">
+                          <Mail className="h-3 w-3 mr-1.5" />
+                          {member.email}
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={`text-xs ${roleColors[m.role]}`}>{m.role}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={m.status === "Active" ? "secondary" : "outline"} className="text-xs">
-                        {m.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Change Role</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">Remove</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                    
+                    <div className="flex items-center gap-4">
+                      <div className="hidden sm:block text-xs text-gray-400 mr-4">
+                        Joined {new Date(member.createdAt).toLocaleDateString()}
+                      </div>
+                      <RoleBadge role={member.role} />
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
     </AppLayout>
   );
-}
+};
+
+export default TeamPage;

@@ -1,105 +1,214 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { AppLayout } from "@/components/AppLayout";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Plus, Loader2, LayoutGrid, List } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Plus, LayoutGrid, List } from "lucide-react";
 
-const projects = [
-  { id: "1", name: "Website Redesign", description: "Redesign the company website with modern UI", progress: 72, status: "Active" as const, members: ["JD", "SC", "MR"], tasks: 25, completed: 18 },
-  { id: "2", name: "Mobile App v2", description: "Build the second version of the mobile app", progress: 45, status: "Active" as const, members: ["AL", "KP"], tasks: 20, completed: 9 },
-  { id: "3", name: "API Integration", description: "Integrate third-party APIs for payment", progress: 90, status: "Active" as const, members: ["MR", "JD", "AL"], tasks: 30, completed: 27 },
-  { id: "4", name: "Brand Guidelines", description: "Create comprehensive brand guidelines", progress: 100, status: "Completed" as const, members: ["SC"], tasks: 12, completed: 12 },
-  { id: "5", name: "Analytics Dashboard", description: "Build real-time analytics dashboard", progress: 30, status: "Active" as const, members: ["KP", "JD"], tasks: 15, completed: 5 },
-  { id: "6", name: "Email Campaign", description: "Design and implement email marketing", progress: 100, status: "Completed" as const, members: ["AL", "SC"], tasks: 8, completed: 8 },
-];
+// Updated Interface to include the new backend stats
+interface Project {
+  _id: string;
+  name: string;
+  description: string;
+  status: string;
+  createdAt: string;
+  totalTasks: number;
+  completedTasks: number;
+  progress: number;
+  assignees: { id: string; initials: string }[];
+}
 
-const statusColors: Record<string, string> = {
-  Active: "bg-primary/10 text-primary",
-  Completed: "bg-success/10 text-success",
-};
-
-export default function ProjectsPage() {
-  const [view, setView] = useState<"grid" | "list">("grid");
+const ProjectsPage = () => {
   const navigate = useNavigate();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // The toggle state
+  
+  // Form State
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchProjects = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) throw new Error("Failed to fetch projects");
+      setProjects(await response.json());
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchProjects(); }, []);
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, description }),
+      });
+      if (!response.ok) throw new Error("Failed to create project");
+
+      toast.success("Project created successfully!");
+      setIsDialogOpen(false);
+      setName(""); setDescription("");
+      fetchProjects();
+    } catch (error: any) { toast.error(error.message); } 
+    finally { setIsSubmitting(false); }
+  };
 
   return (
     <AppLayout>
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6 max-w-6xl mx-auto">
+        
+        {/* HEADER SECTION EXACTLY LIKE SCREENSHOT */}
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Projects</h1>
-            <p className="text-muted-foreground text-sm">{projects.length} projects in workspace</p>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">Projects</h1>
+            <p className="text-gray-500 mt-1">{projects.length} projects in workspace</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex border border-border rounded-md">
-              <Button
-                variant={view === "grid" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8 rounded-r-none"
-                onClick={() => setView("grid")}
+
+          <div className="flex items-center gap-3">
+            {/* Grid/List Toggle */}
+            <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm">
+              <button 
+                onClick={() => setViewMode('grid')}
+                className={`p-2 transition-colors rounded-l-md ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
               >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={view === "list" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8 rounded-l-none"
-                onClick={() => setView("list")}
+                <LayoutGrid className="h-5 w-5" />
+              </button>
+              <div className="w-[1px] h-5 bg-gray-200"></div>
+              <button 
+                onClick={() => setViewMode('list')}
+                className={`p-2 transition-colors rounded-r-md ${viewMode === 'list' ? 'bg-gray-100 text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
               >
-                <List className="h-4 w-4" />
-              </Button>
+                <List className="h-5 w-5" />
+              </button>
             </div>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-              <Plus className="h-4 w-4 mr-1" /> New Project
-            </Button>
+
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-[#3b66f5] hover:bg-[#3157db] text-white flex items-center gap-2 shadow-sm">
+                  <Plus className="h-4 w-4" /> New Project
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Project</DialogTitle>
+                  <DialogDescription>Add a new project to your workspace.</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreateProject} className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label>Project Name</Label>
+                    <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Website Redesign" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description (Optional)</Label>
+                    <textarea 
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      value={description} 
+                      onChange={(e) => setDescription(e.target.value)} 
+                      placeholder="Brief details about this project..."
+                    />
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+                    <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating..." : "Create Project"}</Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
-        <div className={view === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "space-y-3"}>
-          {projects.map((p) => (
-            <Card
-              key={p.id}
-              className="border-border hover:shadow-md transition-all cursor-pointer group"
-              onClick={() => navigate("/tasks")}
-            >
-              <CardContent className={view === "grid" ? "pt-5 pb-4 px-5 space-y-4" : "py-4 px-5 flex items-center gap-6"}>
-                <div className={view === "list" ? "flex-1 min-w-0" : ""}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{p.name}</h3>
-                    <Badge className={`text-xs ${statusColors[p.status]}`}>{p.status}</Badge>
+        {/* PROJECTS DISPLAY */}
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
+        ) : projects.length === 0 ? (
+          <div className="text-center py-20 bg-gray-50 border border-dashed rounded-xl">
+            <p className="text-gray-500 mb-4">You haven't created any projects yet.</p>
+            <Button variant="outline" onClick={() => setIsDialogOpen(true)}>Create your first project</Button>
+          </div>
+        ) : (
+          <div className={viewMode === 'grid' ? "grid gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-4"}>
+            {projects.map((project) => (
+              <Card 
+                key={project._id} 
+                onClick={() => navigate(`/tasks?projectId=${project._id}`)}
+                className="hover:shadow-md transition-all cursor-pointer border-gray-200 overflow-hidden"
+              >
+                <CardContent className="p-6 flex flex-col h-full">
+                  
+                  {/* Top: Title & Status */}
+                  <div className="flex justify-between items-start mb-2 gap-4">
+                    <h3 className="font-bold text-lg text-gray-900 line-clamp-1">{project.name}</h3>
+                    <Badge 
+                      variant="secondary" 
+                      className={project.status === 'completed' || project.progress === 100 
+                        ? 'bg-[#e5f6e6] text-[#2c7a3f] hover:bg-[#e5f6e6] flex-shrink-0' 
+                        : 'bg-[#eef2ff] text-[#4f46e5] hover:bg-[#eef2ff] flex-shrink-0'
+                      }
+                    >
+                      {project.status === 'completed' || project.progress === 100 ? 'Completed' : 'Active'}
+                    </Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground line-clamp-1">{p.description}</p>
-                </div>
+                  
+                  {/* Description */}
+                  <p className="text-[15px] text-gray-500 mb-6 line-clamp-2 min-h-[44px]">
+                    {project.description || "No description provided."}
+                  </p>
 
-                <div className={view === "list" ? "flex items-center gap-6" : "space-y-3"}>
-                  <div>
-                    <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                      <span>{p.completed}/{p.tasks} tasks</span>
-                      <span>{p.progress}%</span>
+                  <div className="mt-auto">
+                    {/* Progress Bar Area */}
+                    <div className="space-y-2 mb-6">
+                      <div className="flex justify-between text-sm font-medium text-gray-500">
+                        <span>{project.completedTasks}/{project.totalTasks} tasks</span>
+                        <span>{project.progress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div 
+                          className="bg-[#3b66f5] h-full rounded-full transition-all duration-500 ease-out" 
+                          style={{ width: `${project.progress}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <Progress value={p.progress} className="h-1.5" />
-                  </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex -space-x-2">
-                      {p.members.map((m) => (
-                        <Avatar key={m} className="h-6 w-6 border-2 border-card">
-                          <AvatarFallback className="bg-primary/10 text-primary text-[10px]">{m}</AvatarFallback>
-                        </Avatar>
+                    {/* Team Avatars */}
+                    <div className="flex -space-x-2 overflow-hidden">
+                      {project.assignees?.map((user, i) => (
+                        <div 
+                          key={i} 
+                          className="inline-flex h-7 w-7 rounded-full ring-2 ring-white bg-[#eef2ff] items-center justify-center text-[10px] font-bold text-[#4f46e5]"
+                        >
+                          {user.initials}
+                        </div>
                       ))}
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </motion.div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </AppLayout>
   );
-}
+};
+
+export default ProjectsPage;

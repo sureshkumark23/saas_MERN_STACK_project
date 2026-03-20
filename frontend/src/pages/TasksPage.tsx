@@ -1,165 +1,361 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom"; 
 import { AppLayout } from "@/components/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Plus, Calendar, MessageSquare } from "lucide-react";
-import { TaskModal } from "@/components/TaskModal";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Plus, Loader2, GripVertical, MessageSquare, Send, LayoutList } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Priority = "High" | "Medium" | "Low";
-type ColumnId = "todo" | "in-progress" | "done";
+interface Project { _id: string; name: string; }
+interface Comment { _id?: string; text: string; userName: string; createdAt: string; }
+interface Task { _id: string; title: string; description: string; status: string; priority: string; projectId: string; createdAt: string; comments?: Comment[]; }
 
-interface Task {
-  id: string;
-  title: string;
-  priority: Priority;
-  assignee: string;
-  dueDate: string;
-  comments: number;
-  description: string;
-}
+const COLUMNS = [
+  { id: "todo", title: "To Do", color: "bg-slate-100" },
+  { id: "in-progress", title: "In Progress", color: "bg-blue-50" },
+  { id: "done", title: "Done", color: "bg-green-50" }
+];
 
-const initialColumns: Record<ColumnId, { title: string; tasks: Task[] }> = {
-  "todo": {
-    title: "To Do",
-    tasks: [
-      { id: "1", title: "Design login page", priority: "High", assignee: "SC", dueDate: "Mar 25", comments: 3, description: "Create a modern login page with social auth options." },
-      { id: "2", title: "Set up CI/CD pipeline", priority: "Medium", assignee: "MR", dueDate: "Mar 28", comments: 1, description: "Configure GitHub Actions for automated testing and deployment." },
-      { id: "3", title: "Write API documentation", priority: "Low", assignee: "AL", dueDate: "Apr 2", comments: 0, description: "Document all REST endpoints with examples." },
-    ],
-  },
-  "in-progress": {
-    title: "In Progress",
-    tasks: [
-      { id: "4", title: "Implement user dashboard", priority: "High", assignee: "JD", dueDate: "Mar 22", comments: 5, description: "Build the main dashboard with widgets and charts." },
-      { id: "5", title: "Database schema migration", priority: "Medium", assignee: "KP", dueDate: "Mar 24", comments: 2, description: "Migrate the database schema to support multi-tenancy." },
-    ],
-  },
-  "done": {
-    title: "Done",
-    tasks: [
-      { id: "6", title: "Project setup & config", priority: "Low", assignee: "JD", dueDate: "Mar 15", comments: 1, description: "Initialize the project with all required dependencies." },
-      { id: "7", title: "Design system tokens", priority: "Medium", assignee: "SC", dueDate: "Mar 18", comments: 4, description: "Define colors, typography, and spacing tokens." },
-    ],
-  },
-};
+const TasksPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlProjectId = searchParams.get("projectId");
 
-const priorityColors: Record<Priority, string> = {
-  High: "bg-priority-high/10 text-priority-high",
-  Medium: "bg-priority-medium/10 text-priority-medium",
-  Low: "bg-priority-low/10 text-priority-low",
-};
-
-const columnColors: Record<ColumnId, string> = {
-  "todo": "border-t-muted-foreground/30",
-  "in-progress": "border-t-primary",
-  "done": "border-t-success",
-};
-
-export default function TasksPage() {
-  const [columns, setColumns] = useState(initialColumns);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Modal States
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [draggedTask, setDraggedTask] = useState<{ task: Task; fromColumn: ColumnId } | null>(null);
+  
+  const [newComment, setNewComment] = useState("");
 
-  const handleDragStart = (task: Task, columnId: ColumnId) => {
-    setDraggedTask({ task, fromColumn: columnId });
+  // Form State
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState(urlProjectId || "");
+  const [status, setStatus] = useState("todo");
+  const [priority, setPriority] = useState("medium");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const fetchTasksUrl = urlProjectId 
+        ? `${import.meta.env.VITE_API_URL}/tasks?projectId=${urlProjectId}`
+        : `${import.meta.env.VITE_API_URL}/tasks`;
+
+      const [tasksRes, projectsRes] = await Promise.all([
+        fetch(fetchTasksUrl, { headers }),
+        fetch(`${import.meta.env.VITE_API_URL}/projects`, { headers })
+      ]);
+
+      if (!tasksRes.ok || !projectsRes.ok) throw new Error("Failed to fetch data");
+      
+      setTasks(await tasksRes.json());
+      
+      const loadedProjects = await projectsRes.json();
+      setProjects(loadedProjects);
+      
+      if (!urlProjectId && loadedProjects.length > 0 && !projectId) {
+        setProjectId(loadedProjects[0]._id);
+      }
+    } catch (error: any) { toast.error(error.message); } 
+    finally { setIsLoading(false); }
   };
 
-  const handleDrop = (targetColumn: ColumnId) => {
-    if (!draggedTask || draggedTask.fromColumn === targetColumn) {
-      setDraggedTask(null);
-      return;
-    }
+  useEffect(() => { fetchData(); }, [urlProjectId]);
 
-    setColumns((prev) => {
-      const updated = { ...prev };
-      updated[draggedTask.fromColumn] = {
-        ...updated[draggedTask.fromColumn],
-        tasks: updated[draggedTask.fromColumn].tasks.filter((t) => t.id !== draggedTask.task.id),
-      };
-      updated[targetColumn] = {
-        ...updated[targetColumn],
-        tasks: [...updated[targetColumn].tasks, draggedTask.task],
-      };
-      return updated;
-    });
-    setDraggedTask(null);
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectId) return toast.error("Please select a project.");
+    setIsSubmitting(true);
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title, description, projectId, status, priority }),
+      });
+
+      if (!response.ok) throw new Error("Failed to create task");
+
+      toast.success("Task created!");
+      setIsCreateDialogOpen(false);
+      setTitle(""); setDescription(""); setStatus("todo"); setPriority("medium");
+      fetchData();
+    } catch (error: any) { toast.error(error.message); } 
+    finally { setIsSubmitting(false); }
+  };
+
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTask || !newComment.trim()) return;
+    try {
+      const token = localStorage.getItem("token");
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/tasks/${selectedTask._id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text: newComment, userName: user.name }),
+      });
+      if (!response.ok) throw new Error("Failed to post comment");
+      const updatedTask = await response.json();
+      setTasks(prev => prev.map(t => t._id === updatedTask._id ? updatedTask : t));
+      setSelectedTask(updatedTask);
+      setNewComment("");
+    } catch (error: any) { toast.error(error.message); }
+  };
+
+  const handleDragStart = (e: React.DragEvent, taskId: string) => e.dataTransfer.setData("taskId", taskId);
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData("taskId");
+    const task = tasks.find(t => t._id === taskId);
+    if (!task || task.status === newStatus) return;
+
+    setTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
+    try {
+      const token = localStorage.getItem("token");
+      await fetch(`${import.meta.env.VITE_API_URL}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: newStatus }),
+      });
+    } catch { toast.error("Failed to save move."); fetchData(); }
+  };
+
+  const getPriorityColor = (p: string) => {
+    switch(p) {
+      case 'high': return "bg-red-100 text-red-700 border-red-200";
+      case 'medium': return "bg-yellow-100 text-yellow-700 border-yellow-200";
+      case 'low': return "bg-blue-100 text-blue-700 border-blue-200";
+      default: return "bg-gray-100 text-gray-700";
+    }
   };
 
   return (
     <AppLayout>
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-6 h-full flex flex-col">
+        <div className="flex justify-between items-center flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Kanban Board</h1>
-            <p className="text-muted-foreground text-sm">Drag tasks between columns to update status</p>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {urlProjectId ? "Project Tasks" : "All Tasks"}
+            </h1>
+            <p className="text-gray-500 mt-2">Manage workflow and collaborate.</p>
           </div>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-            <Plus className="h-4 w-4 mr-1" /> Add Task
-          </Button>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {(Object.entries(columns) as [ColumnId, typeof columns["todo"]][]).map(([colId, col]) => (
-            <div
-              key={colId}
-              className={`rounded-lg border-t-2 ${columnColors[colId]}`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => handleDrop(colId)}
-            >
-              <Card className="border-border bg-card/50">
-                <CardHeader className="pb-3 pt-4 px-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-semibold">{col.title}</CardTitle>
-                    <Badge variant="secondary" className="text-xs">{col.tasks.length}</Badge>
+          <div className="flex items-center gap-3">
+            {/* NEW: ALL TASKS BUTTON */}
+            {urlProjectId && (
+              <Button variant="secondary" onClick={() => setSearchParams({})} className="flex items-center gap-2">
+                <LayoutList className="h-4 w-4" /> View All Tasks
+              </Button>
+            )}
+
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex items-center gap-2"><Plus className="h-4 w-4" /> Create Task</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[600px]">
+                <DialogHeader>
+                  <DialogTitle className="text-xl">Create Task</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleCreateTask} className="space-y-6 mt-2">
+                  <div className="space-y-2">
+                    <Label className="text-gray-600">Title</Label>
+                    <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title..." required />
                   </div>
-                </CardHeader>
-                <CardContent className="px-3 pb-3 space-y-2.5 min-h-[200px]">
-                  <AnimatePresence>
-                    {col.tasks.map((task) => (
-                      <motion.div
-                        key={task.id}
-                        layout
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        draggable
-                        onDragStart={() => handleDragStart(task, colId)}
-                        onClick={() => setSelectedTask(task)}
-                        className="bg-card border border-border rounded-md p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow"
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h4 className="text-sm font-medium text-foreground leading-tight">{task.title}</h4>
-                          <Badge className={`text-[10px] shrink-0 ${priorityColors[task.priority]}`}>
-                            {task.priority}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" /> {task.dueDate}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <MessageSquare className="h-3 w-3" /> {task.comments}
-                            </span>
-                          </div>
-                          <Avatar className="h-5 w-5">
-                            <AvatarFallback className="bg-primary/10 text-primary text-[9px]">{task.assignee}</AvatarFallback>
-                          </Avatar>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </CardContent>
-              </Card>
-            </div>
-          ))}
+                  <div className="space-y-2">
+                    <Label className="text-gray-600">Description</Label>
+                    <textarea 
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      value={description} 
+                      onChange={(e) => setDescription(e.target.value)} 
+                      placeholder="Add details..." 
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-gray-600">Project</Label>
+                      <Select value={projectId} onValueChange={setProjectId} required>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          {projects.map(p => <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-600">Status</Label>
+                      <Select value={status} onValueChange={setStatus}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todo">To Do</SelectItem>
+                          <SelectItem value="in-progress">In Progress</SelectItem>
+                          <SelectItem value="done">Done</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-600">Priority</Label>
+                      <Select value={priority} onValueChange={setPriority}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter className="sm:justify-end gap-2 pt-4">
+                    <DialogClose asChild>
+                      <Button type="button" variant="outline">Cancel</Button>
+                    </DialogClose>
+                    <Button type="submit" disabled={isSubmitting}>
+                      {isSubmitting ? "Creating..." : "Create Task"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
-      </motion.div>
 
-      <TaskModal task={selectedTask} onClose={() => setSelectedTask(null)} />
+        {/* KANBAN BOARD */}
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
+        ) : (
+          <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 items-start pb-6">
+            {COLUMNS.map(column => {
+              const columnTasks = tasks.filter(t => t.status === column.id);
+              return (
+                <div key={column.id} className={`${column.color} rounded-xl p-4 min-h-[500px] flex flex-col`} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, column.id)}>
+                  <div className="flex items-center justify-between mb-4 px-1">
+                    <h3 className="font-semibold text-gray-700">{column.title}</h3>
+                    <Badge variant="secondary" className="bg-white/60 text-gray-600">{columnTasks.length}</Badge>
+                  </div>
+                  
+                  <div className="flex-1 flex flex-col gap-3">
+                    {columnTasks.map(task => {
+                      const project = projects.find(p => p._id === task.projectId);
+                      return (
+                        <Card 
+                          key={task._id} 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, task._id)}
+                          onClick={() => setSelectedTask(task)}
+                          className="cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all border-none shadow-sm"
+                        >
+                          <CardContent className="p-4 flex flex-col gap-3">
+                            <div className="flex justify-between items-start gap-2">
+                              <h4 className="font-medium text-sm leading-snug">{task.title}</h4>
+                              <GripVertical className="h-4 w-4 text-gray-300 flex-shrink-0 mt-0.5 cursor-grab" />
+                            </div>
+                            
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className={`text-[10px] capitalize ${getPriorityColor(task.priority)}`}>
+                                {task.priority}
+                              </Badge>
+                              {!urlProjectId && (
+                                <Badge variant="outline" className="text-[10px] bg-white text-gray-600 font-normal truncate max-w-[120px]">
+                                  {project?.name || "No Project"}
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className="pt-3 border-t mt-auto flex items-center justify-between">
+                              <div className="flex items-center gap-1 text-xs text-gray-400">
+                                <MessageSquare className="h-3 w-3" />
+                                <span>{task.comments?.length || 0}</span>
+                              </div>
+                              <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium text-primary border border-primary/20">
+                                U
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* REPLACED: CENTERED TASK DETAILS DIALOG */}
+        <Dialog open={selectedTask !== null} onOpenChange={(open) => !open && setSelectedTask(null)}>
+          <DialogContent className="sm:max-w-[700px] flex flex-col h-[85vh] max-h-[800px] p-0 overflow-hidden">
+            
+            <div className="p-6 border-b bg-gray-50/50 flex-shrink-0">
+              <div className="flex items-center gap-2 mb-3">
+                <Badge variant="outline" className={`capitalize ${getPriorityColor(selectedTask?.priority || 'medium')}`}>
+                  {selectedTask?.priority} Priority
+                </Badge>
+                <Badge variant="secondary" className="capitalize">
+                  {selectedTask?.status.replace('-', ' ')}
+                </Badge>
+              </div>
+              <DialogTitle className="text-2xl font-bold">{selectedTask?.title}</DialogTitle>
+              <p className="text-sm text-gray-600 mt-2">{selectedTask?.description || "No description provided for this task."}</p>
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col p-6 bg-white">
+              <h4 className="font-semibold text-sm mb-4 flex items-center gap-2 text-gray-700">
+                <MessageSquare className="h-4 w-4" /> Discussion Thread
+              </h4>
+              
+              <ScrollArea className="flex-1 pr-4 mb-4">
+                <div className="space-y-4">
+                  {selectedTask?.comments?.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                      <MessageSquare className="h-10 w-10 mb-2 opacity-20" />
+                      <p className="text-sm">No comments yet. Start the conversation!</p>
+                    </div>
+                  ) : (
+                    selectedTask?.comments?.map((comment, i) => (
+                      <div key={i} className="bg-slate-50 p-4 rounded-xl text-sm border border-slate-100">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-semibold text-primary">{comment.userName}</span>
+                          <span className="text-[11px] text-gray-400 font-medium tracking-wider">
+                            {new Date(comment.createdAt).toLocaleDateString()} at {new Date(comment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-gray-700 leading-relaxed">{comment.text}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+              
+              <form onSubmit={handleAddComment} className="flex gap-3 flex-shrink-0 pt-2">
+                <Input 
+                  placeholder="Write a comment..." 
+                  value={newComment} 
+                  onChange={(e) => setNewComment(e.target.value)} 
+                  className="flex-1 bg-gray-50 focus-visible:ring-primary/50"
+                />
+                <Button type="submit" disabled={!newComment.trim()} className="px-6">
+                  <Send className="h-4 w-4 mr-2" /> Post
+                </Button>
+              </form>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </AppLayout>
   );
-}
+};
+
+export default TasksPage;
