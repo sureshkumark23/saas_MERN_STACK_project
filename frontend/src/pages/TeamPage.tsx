@@ -1,5 +1,4 @@
-import api from "@/lib/api";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +9,10 @@ import { Plus, Loader2, Mail, Shield, User as UserIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW GLOBAL IMPORT
+import { useWorkspace } from "@/context/WorkspaceContext"; 
+import api from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-// Define the shape of our Team Member data
 interface TeamMember {
   _id: string;
   name: string;
@@ -22,58 +22,49 @@ interface TeamMember {
 }
 
 const TeamPage = () => {
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { activeWorkspace } = useWorkspace(); 
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  
-  // Form State
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // <-- GRAB THE ACTIVE WORKSPACE
-  const { activeWorkspace } = useWorkspace(); 
-
-  // Fetch team members
-  const fetchTeam = async () => {
-    setIsLoading(true);
-    try {
+  // FETCH TEAM MEMBERS (React Query)
+  const { data: members = [], isLoading } = useQuery({
+    queryKey: ['team', activeWorkspace?._id],
+    queryFn: async () => {
       const { data } = await api.get('/team');
-      setMembers(data);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to fetch team members");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      return data;
+    },
+    enabled: !!activeWorkspace,
+  });
 
-  // <-- MAGIC RE-FETCH ON WORKSPACE SWITCH
-  useEffect(() => {
-    if (activeWorkspace) {
-      fetchTeam();
-    }
-  }, [activeWorkspace]);
-
-  // Handle inviting a new team member
- const handleInviteMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    try {
-      await api.post('/team/invite', { name, email, role });
-
+  // INVITE MEMBER (React Query Mutation)
+  const inviteMemberMutation = useMutation({
+    mutationFn: async (newMember: { name: string, email: string, role: string }) => {
+      const { data } = await api.post('/team/invite', newMember);
+      return data;
+    },
+    onSuccess: () => {
+      // Refresh the team list instantly
+      queryClient.invalidateQueries({ queryKey: ['team', activeWorkspace?._id] });
       toast.success(`${name} has been added to the workspace!`);
       setIsDialogOpen(false);
-      setName(""); setEmail(""); setRole("member");
-      fetchTeam();
-    } catch (error: any) {
+      setName("");
+      setEmail("");
+      setRole("member");
+    },
+    onError: (error: any) => {
       toast.error(error.response?.data?.message || "Failed to invite member");
-    } finally {
-      setIsSubmitting(false);
     }
+  });
+
+  const handleInviteMember = (e: React.FormEvent) => {
+    e.preventDefault();
+    inviteMemberMutation.mutate({ name, email, role });
   };
-  // Helper to render role badges nicely with Dark Mode support
+
   const RoleBadge = ({ role }: { role: string }) => {
     switch(role) {
       case 'owner': 
@@ -110,25 +101,12 @@ const TeamPage = () => {
               <form onSubmit={handleInviteMember} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label className="dark:text-gray-300">Full Name</Label>
-                  <Input 
-                    value={name} 
-                    onChange={(e) => setName(e.target.value)} 
-                    placeholder="e.g. Jane Doe"
-                    required 
-                    className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-[#3b66f5]"
-                  />
+                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Jane Doe" required className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-[#3b66f5]" />
                 </div>
                 
                 <div className="space-y-2">
                   <Label className="dark:text-gray-300">Email Address</Label>
-                  <Input 
-                    type="email"
-                    value={email} 
-                    onChange={(e) => setEmail(e.target.value)} 
-                    placeholder="jane@company.com"
-                    required 
-                    className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-[#3b66f5]"
-                  />
+                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@company.com" required className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-[#3b66f5]" />
                 </div>
 
                 <div className="space-y-2">
@@ -148,8 +126,8 @@ const TeamPage = () => {
                   <DialogClose asChild>
                     <Button type="button" variant="outline" className="dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</Button>
                   </DialogClose>
-                  <Button type="submit" disabled={isSubmitting} className="bg-[#3b66f5] hover:bg-[#3157db] text-white">
-                    {isSubmitting ? "Inviting..." : "Send Invite"}
+                  <Button type="submit" disabled={inviteMemberMutation.isPending} className="bg-[#3b66f5] hover:bg-[#3157db] text-white">
+                    {inviteMemberMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send Invite"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -157,7 +135,6 @@ const TeamPage = () => {
           </Dialog>
         </div>
 
-        {/* Team Members List */}
         <Card className="shadow-sm border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
           <CardHeader className="border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 pb-4 rounded-t-xl">
             <CardTitle className="text-lg flex items-center gap-2 text-gray-900 dark:text-gray-100">
@@ -172,14 +149,12 @@ const TeamPage = () => {
               </div>
             ) : (
               <div className="divide-y divide-gray-200 dark:divide-gray-800">
-                {members.map((member) => (
+                {members.map((member: TeamMember) => (
                   <div key={member._id} className="flex items-center justify-between p-4 sm:p-6 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
                     <div className="flex items-center gap-4">
-                      {/* Avatar Placeholder */}
                       <div className="h-10 w-10 rounded-full bg-[#eef2ff] dark:bg-blue-950 flex items-center justify-center text-[#4f46e5] dark:text-blue-300 font-bold border border-blue-100 dark:border-blue-900">
                         {member.name.charAt(0).toUpperCase()}
                       </div>
-                      
                       <div>
                         <p className="font-semibold text-gray-900 dark:text-gray-100">{member.name}</p>
                         <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mt-0.5">

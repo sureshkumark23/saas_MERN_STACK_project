@@ -1,4 +1,3 @@
-import api from "@/lib/api";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom"; 
 import { AppLayout } from "@/components/AppLayout";
@@ -7,12 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Plus, Loader2, GripVertical, MessageSquare, Send, LayoutList, CalendarDays } from "lucide-react";
+import { Plus, Loader2, GripVertical, MessageSquare, Send, LayoutList } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW IMPORT
+import { useWorkspace } from "@/context/WorkspaceContext"; 
+import api from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Project { _id: string; name: string; }
 interface Comment { _id?: string; text: string; userName: string; createdAt: string; }
@@ -28,9 +29,8 @@ const TasksPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlProjectId = searchParams.get("projectId");
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { activeWorkspace } = useWorkspace();
   
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -41,96 +41,108 @@ const TasksPage = () => {
   const [projectId, setProjectId] = useState(urlProjectId || "");
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("medium");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
-const fetchData = async () => {
-    setIsLoading(true);
-    try {
+  // 1. FETCH TASKS & PROJECTS (React Query)
+  const queryKey = ['tasks', activeWorkspace?._id, urlProjectId];
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects', activeWorkspace?._id],
+    queryFn: async () => {
+      const { data } = await api.get('/projects');
+      if (!urlProjectId && data.length > 0 && !projectId) setProjectId(data[0]._id);
+      return data;
+    },
+    enabled: !!activeWorkspace,
+  });
+
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey,
+    queryFn: async () => {
       const fetchTasksUrl = urlProjectId ? `/tasks?projectId=${urlProjectId}` : `/tasks`;
+      const { data } = await api.get(fetchTasksUrl);
+      return data;
+    },
+    enabled: !!activeWorkspace,
+  });
 
-      // Axios automatically parses the JSON for both requests!
-      const [tasksRes, projectsRes] = await Promise.all([
-        api.get(fetchTasksUrl),
-        api.get('/projects')
-      ]);
-      
-      setTasks(tasksRes.data);
-      setProjects(projectsRes.data);
-      
-      if (!urlProjectId && projectsRes.data.length > 0 && !projectId) {
-        setProjectId(projectsRes.data[0]._id);
-      }
-    } catch (error: any) { 
-      toast.error(error.response?.data?.message || "Failed to fetch data"); 
-    } finally { 
-      setIsLoading(false); 
-    }
-  };
-  // <-- NEW MAGIC: Add activeWorkspace to dependency array
-  useEffect(() => { 
-    if (activeWorkspace) {
-      fetchData(); 
-    }
-  }, [urlProjectId, activeWorkspace]); 
-
-
-const handleCreateTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!projectId) return toast.error("Please select a project.");
-    setIsSubmitting(true);
-
-    try {
-      await api.post('/tasks', { title, description, projectId, status, priority });
-
+  // 2. CREATE TASK MUTATION
+  const createTaskMutation = useMutation({
+    mutationFn: async (newTask: any) => {
+      const { data } = await api.post('/tasks', newTask);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
       toast.success("Task created!");
       setIsCreateDialogOpen(false);
       setTitle(""); setDescription(""); setStatus("todo"); setPriority("medium");
-      fetchData();
-    } catch (error: any) { 
-      toast.error(error.response?.data?.message || "Failed to create task"); 
-    } finally { 
-      setIsSubmitting(false); 
-    }
+    },
+    onError: (error: any) => toast.error(error.response?.data?.message || "Failed to create task")
+  });
+
+  const handleCreateTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectId) return toast.error("Please select a project.");
+    createTaskMutation.mutate({ title, description, projectId, status, priority });
   };
 
-  const handleAddComment = async (e: React.FormEvent) => {
+  // 3. ADD COMMENT MUTATION
+  const addCommentMutation = useMutation({
+    mutationFn: async ({ taskId, text, userName }: any) => {
+      const { data } = await api.post(`/tasks/${taskId}/comments`, { text, userName });
+      return data;
+    },
+    onSuccess: (updatedTask) => {
+      queryClient.invalidateQueries({ queryKey });
+      setSelectedTask(updatedTask); // Instantly update the open modal
+      setNewComment("");
+    },
+    onError: (error: any) => toast.error(error.response?.data?.message || "Failed to post comment")
+  });
+
+  const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTask || !newComment.trim()) return;
-    try {
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
-      const { data: updatedTask } = await api.post(`/tasks/${selectedTask._id}/comments`, { 
-        text: newComment, 
-        userName: user.name 
-      });
-      
-      setTasks(prev => prev.map(t => t._id === updatedTask._id ? updatedTask : t));
-      setSelectedTask(updatedTask);
-      setNewComment("");
-    } catch (error: any) { 
-      toast.error(error.response?.data?.message || "Failed to post comment"); 
-    }
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    addCommentMutation.mutate({ taskId: selectedTask._id, text: newComment, userName: user.name });
   };
 
-
+  // 4. DRAG AND DROP (OPTIMISTIC UI UPDATE)
+  const moveTaskMutation = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string, status: string }) => {
+      await api.patch(`/tasks/${taskId}`, { status });
+    },
+    onMutate: async ({ taskId, status }) => {
+      // Instantly move the UI card before the backend responds!
+      await queryClient.cancelQueries({ queryKey });
+      const previousTasks = queryClient.getQueryData(queryKey);
+      
+      queryClient.setQueryData(queryKey, (old: Task[] | undefined) => {
+        if (!old) return [];
+        return old.map(t => t._id === taskId ? { ...t, status } : t);
+      });
+      return { previousTasks };
+    },
+    onError: (err, newTodo, context) => {
+      // If it fails, snap the card back to its original column
+      queryClient.setQueryData(queryKey, context?.previousTasks);
+      toast.error("Failed to move task");
+    },
+    onSettled: () => {
+      // Always sync with the server once finished
+      queryClient.invalidateQueries({ queryKey });
+    }
+  });
 
   const handleDragStart = (e: React.DragEvent, taskId: string) => e.dataTransfer.setData("taskId", taskId);
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
-
-  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+  const handleDrop = (e: React.DragEvent, newStatus: string) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData("taskId");
-    const task = tasks.find(t => t._id === taskId);
+    const task = tasks.find((t: Task) => t._id === taskId);
     if (!task || task.status === newStatus) return;
-
-    // Optimistic UI update
-    setTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
-    try {
-      await api.patch(`/tasks/${taskId}`, { status: newStatus });
-    } catch (error: any) { 
-      toast.error(error.response?.data?.message || "Failed to save move."); 
-      fetchData(); // Revert on failure
-    }
+    
+    moveTaskMutation.mutate({ taskId, status: newStatus });
   };
 
   const getPriorityColor = (p: string) => {
@@ -162,7 +174,7 @@ const handleCreateTask = async (e: React.FormEvent) => {
 
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="flex items-center gap-2"><Plus className="h-4 w-4" /> Create Task</Button>
+                <Button className="flex items-center gap-2 bg-[#3b66f5] hover:bg-[#3157db] text-white"><Plus className="h-4 w-4" /> Create Task</Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[600px] dark:bg-gray-900 dark:border-gray-800">
                 <DialogHeader>
@@ -188,7 +200,7 @@ const handleCreateTask = async (e: React.FormEvent) => {
                       <Select value={projectId} onValueChange={setProjectId} required>
                         <SelectTrigger className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"><SelectValue placeholder="Select" /></SelectTrigger>
                         <SelectContent className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100">
-                          {projects.map(p => <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>)}
+                          {projects.map((p: Project) => <SelectItem key={p._id} value={p._id}>{p.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
@@ -217,9 +229,11 @@ const handleCreateTask = async (e: React.FormEvent) => {
                   </div>
                   <DialogFooter className="sm:justify-end gap-2 pt-4">
                     <DialogClose asChild>
-                      <Button type="button" variant="outline">Cancel</Button>
+                      <Button type="button" variant="outline" className="dark:border-gray-700 dark:text-gray-300">Cancel</Button>
                     </DialogClose>
-                    <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating..." : "Create Task"}</Button>
+                    <Button type="submit" disabled={createTaskMutation.isPending} className="bg-[#3b66f5] hover:bg-[#3157db] text-white">
+                      {createTaskMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Task"}
+                    </Button>
                   </DialogFooter>
                 </form>
               </DialogContent>
@@ -232,7 +246,7 @@ const handleCreateTask = async (e: React.FormEvent) => {
         ) : (
           <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 items-start pb-6">
             {COLUMNS.map(column => {
-              const columnTasks = tasks.filter(t => t.status === column.id);
+              const columnTasks = tasks.filter((t: Task) => t.status === column.id);
               return (
                 <div key={column.id} className={`${column.color} rounded-xl p-4 min-h-[500px] flex flex-col border dark:border-gray-800`} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, column.id)}>
                   <div className="flex items-center justify-between mb-4 px-1">
@@ -241,15 +255,15 @@ const handleCreateTask = async (e: React.FormEvent) => {
                   </div>
                   
                   <div className="flex-1 flex flex-col gap-3">
-                    {columnTasks.map(task => {
-                      const project = projects.find(p => p._id === task.projectId);
+                    {columnTasks.map((task: Task) => {
+                      const project = projects.find((p: Project) => p._id === task.projectId);
                       return (
                         <Card 
                           key={task._id} 
                           draggable
                           onDragStart={(e) => handleDragStart(e, task._id)}
                           onClick={() => setSelectedTask(task)}
-                          className="cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all border-none shadow-sm bg-white dark:bg-gray-950"
+                          className="cursor-pointer hover:ring-2 hover:ring-[#3b66f5]/40 transition-all border-none shadow-sm bg-white dark:bg-gray-950"
                         >
                           <CardContent className="p-4 flex flex-col gap-3">
                             <div className="flex justify-between items-start gap-2">
@@ -275,7 +289,7 @@ const handleCreateTask = async (e: React.FormEvent) => {
                                 <MessageSquare className="h-3 w-3" />
                                 <span>{task.comments?.length || 0}</span>
                               </div>
-                              <div className="h-6 w-6 rounded-full bg-primary/10 dark:bg-blue-950 flex items-center justify-center text-[10px] font-medium text-primary dark:text-blue-300 border border-primary/20 dark:border-blue-900">
+                              <div className="h-6 w-6 rounded-full bg-[#eef2ff] dark:bg-blue-950 flex items-center justify-center text-[10px] font-medium text-[#4f46e5] dark:text-blue-300 border border-blue-100 dark:border-blue-900">
                                 U
                               </div>
                             </div>
@@ -290,6 +304,7 @@ const handleCreateTask = async (e: React.FormEvent) => {
           </div>
         )}
 
+        {/* Task Details Dialog (Comments) */}
         <Dialog open={selectedTask !== null} onOpenChange={(open) => !open && setSelectedTask(null)}>
           <DialogContent className="sm:max-w-[700px] flex flex-col h-[85vh] max-h-[800px] p-0 overflow-hidden dark:bg-gray-900 dark:border-gray-800">
             
@@ -322,7 +337,7 @@ const handleCreateTask = async (e: React.FormEvent) => {
                     selectedTask?.comments?.map((comment, i) => (
                       <div key={i} className="bg-slate-50 dark:bg-gray-900 p-4 rounded-xl text-sm border border-slate-100 dark:border-gray-800">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="font-semibold text-primary dark:text-blue-400">{comment.userName}</span>
+                          <span className="font-semibold text-[#3b66f5] dark:text-blue-400">{comment.userName}</span>
                           <span className="text-[11px] text-gray-400 dark:text-gray-500 font-medium tracking-wider">
                             {new Date(comment.createdAt).toLocaleDateString()}
                           </span>
@@ -339,10 +354,11 @@ const handleCreateTask = async (e: React.FormEvent) => {
                   placeholder="Write a comment..." 
                   value={newComment} 
                   onChange={(e) => setNewComment(e.target.value)} 
-                  className="flex-1 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-primary/50"
+                  className="flex-1 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-[#3b66f5]"
                 />
-                <Button type="submit" disabled={!newComment.trim()} className="px-6">
-                  <Send className="h-4 w-4 mr-2" /> Post
+                <Button type="submit" disabled={!newComment.trim() || addCommentMutation.isPending} className="px-6 bg-[#3b66f5] hover:bg-[#3157db] text-white">
+                  {addCommentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                  Post
                 </Button>
               </form>
             </div>
