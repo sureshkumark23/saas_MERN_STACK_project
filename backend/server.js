@@ -18,6 +18,7 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/tasks', require('./routes/tasks')); 
 app.use('/api/team', require('./routes/team'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/workspaces', require('./routes/workspaces'));
 
 
 //db connection

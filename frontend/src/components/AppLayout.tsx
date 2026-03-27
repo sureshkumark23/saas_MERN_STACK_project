@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,8 +15,33 @@ import {
   User as UserIcon,
   Menu,
   Building2,
-  X
+  X,
+  ChevronDown,
+  Check,
+  Plus
 } from "lucide-react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -28,13 +53,109 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
-  // Theme State (Checks local storage or defaults to light)
+ 
+  // ==========================================
+  // REAL BACKEND WORKSPACE LOGIC
+  // ==========================================
+  const [workspaces, setWorkspaces] = useState<{_id: string, name: string}[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<{_id: string, name: string} | null>(null);
+  const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+
+  // 1. Fetch Workspaces on Mount
+  useEffect(() => {
+    const fetchWorkspaces = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setWorkspaces(data);
+        
+        // Find the currently active one (we saved its ID in localStorage during login/switch)
+        const savedId = localStorage.getItem("activeWorkspaceId");
+        const active = data.find((w: any) => w._id === savedId) || data[0];
+        setActiveWorkspace(active);
+      } catch (err) {
+        console.error("Failed to load workspaces");
+      }
+    };
+    fetchWorkspaces();
+  }, []);
+
+  // 2. Handle Switch
+  const handleSwitchWorkspace = async (workspace: {_id: string, name: string}) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces/switch/${workspace._id}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const data = await res.json();
+      
+      // THE FIX: Overwrite the old token with the fresh one!
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
+      
+      setActiveWorkspace(workspace);
+      localStorage.setItem("activeWorkspaceId", workspace._id);
+      toast.success(`Switched to ${workspace.name}`);
+      
+      // Reload the page with the new token
+      window.location.reload(); 
+    } catch (err) {
+      toast.error("Failed to switch workspace");
+    }
+  };
+
+  // 3. Handle Create
+  const handleCreateWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWorkspaceName.trim()) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ name: newWorkspaceName })
+      });
+      
+      const data = await res.json();
+      
+      // THE FIX: Overwrite the old token with the fresh one!
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
+      
+      const newWorkspace = data.workspace; // Extract workspace from updated API response
+      
+      setWorkspaces([...workspaces, newWorkspace]);
+      setActiveWorkspace(newWorkspace);
+      localStorage.setItem("activeWorkspaceId", newWorkspace._id);
+      
+      setIsCreateWorkspaceOpen(false);
+      setNewWorkspaceName("");
+      toast.success(`Created ${newWorkspace.name}`);
+      
+      // Reload the page with the new token
+      window.location.reload();
+    } catch (err) {
+      toast.error("Failed to create workspace");
+    }
+  };
+  // ==========================================
+
   const [theme, setTheme] = useState<'light' | 'dark'>(
     (localStorage.getItem('theme') as 'light' | 'dark') || 'light'
   );
 
-  // Handle Theme Switching
   useEffect(() => {
     const root = window.document.documentElement;
     if (theme === 'dark') {
@@ -47,7 +168,6 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
 
   const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
 
-  // Load User Data
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) setUser(JSON.parse(storedUser));
@@ -59,11 +179,9 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
     navigate("/login");
   };
 
-  // Handle Search Submission
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      // Navigate to tasks page and pass the search query in the URL
       navigate(`/tasks?search=${encodeURIComponent(searchQuery)}`);
       setSearchQuery("");
     }
@@ -85,7 +203,6 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className={`min-h-screen flex ${theme === 'dark' ? 'bg-gray-950 text-white' : 'bg-gray-50/50 text-gray-900'}`}>
       
-      {/* MOBILE OVERLAY */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
@@ -100,15 +217,55 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
         ${theme === 'dark' ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className={`h-16 flex items-center justify-between px-6 border-b ${theme === 'dark' ? 'border-gray-800' : 'border-gray-200'}`}>
-          <div className="flex items-center gap-2 font-bold text-xl">
-            <div className="bg-[#3b66f5] p-1.5 rounded-lg">
-              <Building2 className="h-5 w-5 text-white" />
-            </div>
-            Acme Corp
-          </div>
-          <button className="md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
-            <X className="h-5 w-5" />
+        
+        {/* DYNAMIC WORKSPACE SWITCHER */}
+        <div className={`h-16 flex items-center justify-between px-4 border-b ${theme === 'dark' ? 'border-gray-800' : 'border-gray-200'}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger className={`flex flex-1 items-center justify-between px-2 py-1.5 rounded-lg transition-colors outline-none ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
+              <div className="flex items-center gap-2 font-bold text-lg">
+                <div className="bg-[#3b66f5] p-1.5 rounded-md flex-shrink-0">
+                  <Building2 className="h-4 w-4 text-white" />
+                </div>
+                {/* Fixed to safely read the object's name property */}
+                <span className="truncate max-w-[130px] text-left">{activeWorkspace?.name || "Loading..."}</span>
+              </div>
+              <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            </DropdownMenuTrigger>
+            
+            <DropdownMenuContent align="start" className="w-56 mt-2 dark:bg-gray-900 dark:border-gray-800">
+              <DropdownMenuLabel className="text-xs text-gray-500 uppercase tracking-wider">Workspaces</DropdownMenuLabel>
+              
+              {/* DYNAMICALLY MAP OVER SAVED WORKSPACE OBJECTS */}
+              {workspaces.map((workspace) => (
+                <DropdownMenuItem 
+                  key={workspace._id}
+                  onClick={() => handleSwitchWorkspace(workspace)} 
+                  className="flex items-center justify-between cursor-pointer py-2 dark:text-gray-200 dark:focus:bg-gray-800"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <div className="h-6 w-6 rounded bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 text-xs font-bold flex-shrink-0">
+                      {workspace.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="truncate max-w-[130px]">{workspace.name}</span>
+                  </div>
+                  {activeWorkspace?._id === workspace._id && <Check className="h-4 w-4 text-gray-900 dark:text-gray-100 flex-shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+              
+              <DropdownMenuSeparator className="dark:bg-gray-800" />
+              
+              <DropdownMenuItem 
+                onClick={() => setIsCreateWorkspaceOpen(true)} 
+                className="cursor-pointer py-2 text-[#3b66f5] dark:text-blue-400 focus:text-[#3b66f5] dark:focus:text-blue-400 font-medium dark:focus:bg-gray-800"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Workspace
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <button className="md:hidden ml-2" onClick={() => setIsMobileMenuOpen(false)}>
+            <X className="h-5 w-5 text-gray-400" />
           </button>
         </div>
 
@@ -141,16 +298,10 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
         
         {/* TOP NAVIGATION HEADER */}
         <header className={`h-16 border-b flex items-center justify-between px-4 sm:px-6 z-10 ${theme === 'dark' ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-          
-          {/* Left: Mobile menu toggle & Search */}
           <div className="flex items-center gap-4 flex-1">
-            <button 
-              className="md:hidden text-gray-500 hover:text-gray-700"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
+            <button className="md:hidden text-gray-500 hover:text-gray-700" onClick={() => setIsMobileMenuOpen(true)}>
               <Menu className="h-6 w-6" />
             </button>
-            
             <form onSubmit={handleSearch} className="relative hidden sm:block w-full max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
@@ -163,43 +314,24 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
             </form>
           </div>
 
-          {/* Right: Icons & Profile Dropdown */}
           <div className="flex items-center gap-2 sm:gap-4">
-            
-            {/* THEME TOGGLE */}
-            <button 
-              onClick={toggleTheme}
-              className={`p-2 rounded-full transition-colors ${theme === 'dark' ? 'text-yellow-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}
-            >
+            <button onClick={toggleTheme} className={`p-2 rounded-full transition-colors ${theme === 'dark' ? 'text-yellow-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
               {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
 
-            {/* NOTIFICATIONS */}
             <div className="relative">
-              <button 
-                onClick={() => { setIsNotifOpen(!isNotifOpen); setIsDropdownOpen(false); }}
-                className={`relative p-2 rounded-full transition-colors mr-2 ${theme === 'dark' ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}
-              >
+              <button onClick={() => { setIsNotifOpen(!isNotifOpen); setIsDropdownOpen(false); }} className={`relative p-2 rounded-full transition-colors mr-2 ${theme === 'dark' ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
                 <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1.5 h-[18px] w-[18px] rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center border-2 border-white dark:border-gray-900">
-                  2
-                </span>
+                <span className="absolute top-1 right-1.5 h-[18px] w-[18px] rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center border-2 border-white dark:border-gray-900">2</span>
               </button>
 
-              {/* Notifications Dropdown Panel */}
               {isNotifOpen && (
                 <div className={`absolute right-0 mt-2 w-80 rounded-xl shadow-lg border py-2 z-50 animate-in fade-in slide-in-from-top-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                  <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-semibold text-sm">
-                    Recent Notifications
-                  </div>
+                  <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700 font-semibold text-sm">Recent Notifications</div>
                   <div className="max-h-64 overflow-y-auto">
                     <div className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer border-b border-gray-50 dark:border-gray-700">
                       <p className="text-sm"><span className="font-medium text-[#3b66f5]">Sarah</span> mentioned you in a comment.</p>
                       <p className="text-xs text-gray-400 mt-1">10 minutes ago</p>
-                    </div>
-                    <div className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer">
-                      <p className="text-sm">Your project <span className="font-medium">SaaS MVP</span> reached 100% completion!</p>
-                      <p className="text-xs text-gray-400 mt-1">2 hours ago</p>
                     </div>
                   </div>
                 </div>
@@ -208,18 +340,12 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
 
             <div className={`h-6 w-px hidden sm:block ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`}></div>
 
-            {/* USER PROFILE DROPDOWN */}
             <div className="relative">
-              <button
-                onClick={() => { setIsDropdownOpen(!isDropdownOpen); setIsNotifOpen(false); }}
-                className={`flex items-center gap-2 p-1 pr-3 rounded-full transition-colors focus:outline-none ml-1 ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-gray-50'}`}
-              >
+              <button onClick={() => { setIsDropdownOpen(!isDropdownOpen); setIsNotifOpen(false); }} className={`flex items-center gap-2 p-1 pr-3 rounded-full transition-colors focus:outline-none ml-1 ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-gray-50'}`}>
                 <div className="h-8 w-8 rounded-full bg-[#3b66f5] flex items-center justify-center text-sm font-semibold text-white">
                   {getInitials(user?.name || "User")}
                 </div>
-                <span className={`text-[15px] font-medium hidden sm:block ${theme === 'dark' ? 'text-gray-200' : 'text-gray-900'}`}>
-                  {user?.name || "Loading..."}
-                </span>
+                <span className={`text-[15px] font-medium hidden sm:block ${theme === 'dark' ? 'text-gray-200' : 'text-gray-900'}`}>{user?.name || "Loading..."}</span>
               </button>
 
               {isDropdownOpen && (
@@ -231,10 +357,7 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
                     <Settings className="h-4 w-4 text-gray-400" /> Settings
                   </button>
                   <div className={`h-px my-1 ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}></div>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 w-full text-left"
-                  >
+                  <button onClick={handleLogout} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 w-full text-left">
                     <LogOut className="h-4 w-4" /> Logout
                   </button>
                 </div>
@@ -244,13 +367,42 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </header>
 
-        {/* PAGE CONTENT */}
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 sm:p-8 h-full">
+          <div className="p-4 sm:p-8 h-full bg-gray-50/50 dark:bg-gray-950">
             {children}
           </div>
         </main>
       </div>
+
+      {/* CREATE WORKSPACE DIALOG */}
+      <Dialog open={isCreateWorkspaceOpen} onOpenChange={setIsCreateWorkspaceOpen}>
+        <DialogContent className="sm:max-w-[425px] dark:bg-gray-900 dark:border-gray-800">
+          <DialogHeader>
+            <DialogTitle className="dark:text-gray-100">Create Workspace</DialogTitle>
+            <DialogDescription className="dark:text-gray-400">
+              Set up a new workspace to manage a different team or company.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateWorkspace} className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label className="dark:text-gray-300">Workspace Name</Label>
+              <Input 
+                value={newWorkspaceName} 
+                onChange={(e) => setNewWorkspaceName(e.target.value)} 
+                placeholder="e.g. Acme Marketing" 
+                required 
+                className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+              />
+            </div>
+            <DialogFooter className="pt-4">
+              <DialogClose asChild>
+                <Button type="button" variant="outline" className="dark:border-gray-700 dark:text-gray-300">Cancel</Button>
+              </DialogClose>
+              <Button type="submit">Create Workspace</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

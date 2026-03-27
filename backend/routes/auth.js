@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Tenant = require('../models/Tenant');
 const authMiddleware = require('../middleware/authMiddleware');
 
+
 const router = express.Router();
 
 // @route   POST /api/auth/register
@@ -124,6 +125,48 @@ router.get('/me', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
+  }
+});
+
+
+
+
+// @route   PUT /api/auth/profile
+// @desc    Update user profile (name, email)
+router.put('/profile', authMiddleware, async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.name = name || user.name;
+    user.email = email || user.email;
+    await user.save();
+
+    res.json({ _id: user._id, name: user.name, email: user.email, role: user.role });
+  } catch (err) {
+    console.error('Error updating profile:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   PUT /api/auth/password
+// @desc    Update user password
+router.put('/password', authMiddleware, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Hash the new password before saving it
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(password, salt);
+    await user.save();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Error updating password:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 module.exports = router;

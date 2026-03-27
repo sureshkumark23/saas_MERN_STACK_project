@@ -10,12 +10,19 @@ module.exports = function (req, res, next) {
   }
 
   try {
-    // 3. Verify the token (Expects the format "Bearer <token>")
+    // 3. Verify the token 
     const decoded = jwt.verify(token.split(' ')[1] || token, process.env.JWT_SECRET || 'fallback_secret_key');
     
-    // 4. Attach the user payload to the request object
-    req.user = decoded.user;
-    next(); // Move on to the next function/route
+    // 4. THE FIX: Intelligently grab the user data!
+    // If it's a new token, it uses decoded.user. If it's your old stuck token, it just uses decoded.
+    req.user = decoded.user || decoded;
+    
+    // Safety check to ensure we actually got the tenantId
+    if (!req.user || !req.user.tenantId) {
+      return res.status(401).json({ message: 'Invalid token structure. Please log in again.' });
+    }
+
+    next(); 
   } catch (err) {
     res.status(401).json({ message: 'Token is not valid' });
   }

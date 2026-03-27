@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-// Notice we added the Activity icon here!
 import { Folder, CheckSquare, Users, Activity, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -10,7 +9,7 @@ interface DashboardStats {
   projectCount: number;
   taskCount: number;
   teamCount: number;
-  completionRate: number; // Added the new completion rate here
+  completionRate: number;
   recentTasks: {
     _id: string;
     title: string;
@@ -79,12 +78,11 @@ const DashboardPage = () => {
     <AppLayout>
       <div className="space-y-8 max-w-5xl mx-auto pb-10">
         
-        {/* NEW HEADER MATCHING SCREENSHOT */}
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
             Dashboard
           </h1>
-          <p className="text-gray-500 mt-2 text-[15px]">
+          <p className="text-gray-500 dark:text-gray-400 mt-2 text-[15px]">
             Welcome back, {user?.name.split(' ')[0] || "User"}. Here's your overview.
           </p>
         </div>
@@ -93,74 +91,74 @@ const DashboardPage = () => {
           <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary/50" /></div>
         ) : (
           <>
-            {/* NEW 2x2 GRID STAT CARDS */}
+            {/* NEW 2x2 GRID STAT CARDS - THEMED */}
             <div className="grid gap-4 md:grid-cols-2">
               
               {/* Total Projects */}
-              <Card className="border border-gray-200 shadow-sm rounded-xl bg-white">
+              <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
-                    <p className="text-[15px] font-medium text-gray-500">Total Projects</p>
-                    <Folder className="h-5 w-5 text-blue-600" />
+                    <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">Total Projects</p>
+                    <Folder className="h-5 w-5 text-blue-600 dark:text-blue-500" />
                   </div>
                   <div className="mt-4">
-                    <h2 className="text-4xl font-bold text-gray-900">{stats?.projectCount || 0}</h2>
-                    <p className="text-sm text-gray-500 mt-2">+2 this week</p>
+                    <h2 className="text-4xl font-bold text-gray-900 dark:text-gray-100">{stats?.projectCount || 0}</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">+2 this week</p>
                   </div>
                 </CardContent>
               </Card>
               
               {/* Active Tasks */}
-              <Card className="border border-gray-200 shadow-sm rounded-xl bg-white">
+              <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
-                    <p className="text-[15px] font-medium text-gray-500">Active Tasks</p>
-                    <CheckSquare className="h-5 w-5 text-blue-600" />
+                    <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">Active Tasks</p>
+                    <CheckSquare className="h-5 w-5 text-blue-600 dark:text-blue-500" />
                   </div>
                   <div className="mt-4">
-                    <h2 className="text-4xl font-bold text-gray-900">{stats?.taskCount || 0}</h2>
-                    <p className="text-sm text-gray-500 mt-2">8 due today</p>
+                    <h2 className="text-4xl font-bold text-gray-900 dark:text-gray-100">{stats?.taskCount || 0}</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">8 due today</p>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Team Members */}
-              <Card className="border border-gray-200 shadow-sm rounded-xl bg-white">
+              <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
-                    <p className="text-[15px] font-medium text-gray-500">Team Members</p>
-                    <Users className="h-5 w-5 text-blue-600" />
+                    <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">Team Members</p>
+                    <Users className="h-5 w-5 text-blue-600 dark:text-blue-500" />
                   </div>
                   <div className="mt-4">
-                    <h2 className="text-4xl font-bold text-gray-900">{stats?.teamCount || 0}</h2>
-                    <p className="text-sm text-gray-500 mt-2">1 pending invite</p>
+                    <h2 className="text-4xl font-bold text-gray-900 dark:text-gray-100">{stats?.teamCount || 0}</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">1 pending invite</p>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Completion Rate */}
-              <Card className="border border-gray-200 shadow-sm rounded-xl bg-white">
+              <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
-                    <p className="text-[15px] font-medium text-gray-500">Completion Rate</p>
-                    <Activity className="h-5 w-5 text-blue-600" />
+                    <p className="text-[15px] font-medium text-gray-500 dark:text-gray-400">Completion Rate</p>
+                    <Activity className="h-5 w-5 text-blue-600 dark:text-blue-500" />
                   </div>
                   <div className="mt-4">
-                    <h2 className="text-4xl font-bold text-gray-900">{stats?.completionRate || 0}%</h2>
-                    <p className="text-sm text-gray-500 mt-2">+5% vs last week</p>
+                    <h2 className="text-4xl font-bold text-gray-900 dark:text-gray-100">{stats?.completionRate || 0}%</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">+5% vs last week</p>
                   </div>
                 </CardContent>
               </Card>
 
             </div>
 
-            {/* Recent Activity & Active Projects Grid */}
+            {/* Recent Activity & Active Projects Grid - THEMED */}
             <div className="grid gap-6 md:grid-cols-1">
               
               {/* RECENT ACTIVITY CARD */}
-              <Card className="border border-gray-200 shadow-sm bg-white rounded-xl overflow-hidden mt-4">
+              <Card className="border border-gray-200 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 rounded-xl overflow-hidden mt-4">
                 <CardHeader className="pb-2 pt-6 px-6">
-                  <CardTitle className="text-xl font-semibold text-gray-900">Recent Activity</CardTitle>
+                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">Recent Activity</CardTitle>
                 </CardHeader>
                 <CardContent className="px-6 pb-6 pt-4">
                   {stats?.recentTasks && stats.recentTasks.length > 0 ? (
@@ -172,30 +170,30 @@ const DashboardPage = () => {
                         return (
                           <div key={task._id} className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                              <div className="h-10 w-10 rounded-full bg-[#eef2ff] flex items-center justify-center text-sm font-medium text-[#4f46e5]">
+                              <div className="h-10 w-10 rounded-full bg-[#eef2ff] dark:bg-blue-950 flex items-center justify-center text-sm font-medium text-[#4f46e5] dark:text-blue-300">
                                 {getInitials(actionUser)}
                               </div>
-                              <p className="text-[15px] text-gray-800">
-                                <span className="font-medium text-gray-900">{actionUser}</span>
-                                <span className="text-gray-500 mx-1.5">{actionText}</span>
-                                <span className="font-medium text-gray-900">{task.title}</span>
+                              <p className="text-[15px] text-gray-800 dark:text-gray-200">
+                                <span className="font-medium text-gray-900 dark:text-gray-100">{actionUser}</span>
+                                <span className="text-gray-500 dark:text-gray-400 mx-1.5">{actionText}</span>
+                                <span className="font-medium text-gray-900 dark:text-gray-100">{task.title}</span>
                               </p>
                             </div>
-                            <span className="text-sm text-gray-400">{timeAgo(task.createdAt)}</span>
+                            <span className="text-sm text-gray-400 dark:text-gray-500">{timeAgo(task.createdAt)}</span>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-gray-500">No activity recorded yet.</div>
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No activity recorded yet.</div>
                   )}
                 </CardContent>
               </Card>
 
               {/* ACTIVE PROJECTS CARD */}
-              <Card className="border border-gray-200 shadow-sm bg-white rounded-xl overflow-hidden mt-2">
+              <Card className="border border-gray-200 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 rounded-xl overflow-hidden mt-2">
                 <CardHeader className="pb-2 pt-6 px-6">
-                  <CardTitle className="text-xl font-semibold text-gray-900">Active Projects</CardTitle>
+                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">Active Projects</CardTitle>
                 </CardHeader>
                 <CardContent className="px-6 pb-6 pt-4">
                   {stats?.activeProjects && stats.activeProjects.length > 0 ? (
@@ -203,20 +201,20 @@ const DashboardPage = () => {
                       {stats.activeProjects.map((project) => (
                         <div key={project._id} className="space-y-3">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-[16px] font-medium text-gray-900">{project.name}</h4>
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-700 hover:bg-gray-100 rounded-md px-2.5 py-0.5">
+                            <h4 className="text-[16px] font-medium text-gray-900 dark:text-gray-100">{project.name}</h4>
+                            <Badge variant="secondary" className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md px-2.5 py-0.5">
                               Active
                             </Badge>
                           </div>
                           
-                          <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                          <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2.5 overflow-hidden">
                             <div 
-                              className="bg-[#3b66f5] h-full rounded-full transition-all duration-500 ease-out" 
+                              className="bg-[#3b66f5] dark:bg-blue-600 h-full rounded-full transition-all duration-500 ease-out" 
                               style={{ width: `${project.progress}%` }}
                             ></div>
                           </div>
                           
-                          <div className="flex justify-between text-sm text-gray-500 font-medium">
+                          <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400 font-medium">
                             <span>{project.completedTasks}/{project.totalTasks} tasks</span>
                             <span>{project.progress}%</span>
                           </div>
@@ -224,7 +222,7 @@ const DashboardPage = () => {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-gray-500">No active projects to display.</div>
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">No active projects to display.</div>
                   )}
                 </CardContent>
               </Card>
