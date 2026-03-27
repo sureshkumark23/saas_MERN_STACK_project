@@ -34,7 +34,6 @@ router.post('/', authMiddleware, async (req, res) => {
     user.tenantId = savedTenant._id; 
     await user.save();
 
-    // FIXED: Wrapped payload inside 'user' object
     const token = jwt.sign(
       { user: { id: user._id, tenantId: user.tenantId, role: user.role } },
       process.env.JWT_SECRET || 'fallback_secret_key',
@@ -56,7 +55,6 @@ router.put('/switch/:id', authMiddleware, async (req, res) => {
     user.tenantId = workspaceId;
     await user.save();
 
-    // FIXED: Wrapped payload inside 'user' object
     const token = jwt.sign(
       { user: { id: user._id, tenantId: user.tenantId, role: user.role } },
       process.env.JWT_SECRET || 'fallback_secret_key',
@@ -66,6 +64,65 @@ router.put('/switch/:id', authMiddleware, async (req, res) => {
     res.json({ message: 'Switched workspace successfully', token });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   DELETE /api/workspaces/:id
+// @desc    Delete a workspace (OWNER ONLY)
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    // 1. Check if the user is the owner
+    if (req.user.role !== 'owner') {
+      return res.status(403).json({ message: 'Unauthorized. Only the workspace owner can delete it.' });
+    }
+
+    const workspaceId = req.params.id;
+    const user = await User.findById(req.user.id);
+
+    // 2. Prevent deleting if it's their ONLY workspace
+    if (user.workspaces.length <= 1) {
+      return res.status(400).json({ message: 'You cannot delete your only workspace. Please create another one first.' });
+    }
+
+    // 3. Delete the Workspace document
+    await Tenant.findByIdAndDelete(workspaceId);
+
+    // 4. Remove the workspace ID from ALL users' workspaces arrays
+    await User.updateMany(
+      { workspaces: workspaceId },
+      { $pull: { workspaces: workspaceId } }
+    );
+
+    res.json({ message: 'Workspace deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   PUT /api/workspaces/:id
+// @desc    Rename a workspace (OWNER ONLY)
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'owner') {
+      return res.status(403).json({ message: 'Unauthorized. Only the workspace owner can rename it.' });
+    }
+
+    const { name } = req.body;
+    if (!name || name.trim() === '') {
+      return res.status(400).json({ message: 'Workspace name is required.' });
+    }
+
+    const updatedWorkspace = await Tenant.findByIdAndUpdate(
+      req.params.id,
+      { name: name.trim() },
+      { returnDocument: 'after' }
+    );
+
+    res.json({ message: 'Workspace renamed successfully', workspace: updatedWorkspace });
+  } catch (err) {
+    console.error("Rename Workspace Error:", err);
+    res.status(500).json({ message: 'Server error while renaming workspace' });
   }
 });
 

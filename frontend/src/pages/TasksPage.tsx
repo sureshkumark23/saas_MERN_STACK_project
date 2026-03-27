@@ -11,12 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW IMPORT
 
 interface Project { _id: string; name: string; }
 interface Comment { _id?: string; text: string; userName: string; createdAt: string; }
 interface Task { _id: string; title: string; description: string; status: string; priority: string; projectId: string; createdAt: string; comments?: Comment[]; }
 
-// Updated Column Colors for Dark Mode
 const COLUMNS = [
   { id: "todo", title: "To Do", color: "bg-slate-100 dark:bg-gray-900" },
   { id: "in-progress", title: "In Progress", color: "bg-blue-50 dark:bg-gray-900" },
@@ -42,7 +42,10 @@ const TasksPage = () => {
   const [priority, setPriority] = useState("medium");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
+
   const fetchData = async () => {
+    setIsLoading(true);
     try {
       const token = localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
@@ -70,7 +73,12 @@ const TasksPage = () => {
     finally { setIsLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, [urlProjectId]);
+  // <-- NEW MAGIC: Add activeWorkspace to dependency array
+  useEffect(() => { 
+    if (activeWorkspace) {
+      fetchData(); 
+    }
+  }, [urlProjectId, activeWorkspace]); 
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,7 +235,6 @@ const TasksPage = () => {
           </div>
         </div>
 
-        {/* KANBAN BOARD - THEMED COLUMNS & CARDS */}
         {isLoading ? (
           <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
         ) : (
@@ -291,7 +298,6 @@ const TasksPage = () => {
           </div>
         )}
 
-        {/* TASK DETAILS DIALOG - THEMED */}
         <Dialog open={selectedTask !== null} onOpenChange={(open) => !open && setSelectedTask(null)}>
           <DialogContent className="sm:max-w-[700px] flex flex-col h-[85vh] max-h-[800px] p-0 overflow-hidden dark:bg-gray-900 dark:border-gray-800">
             

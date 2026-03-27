@@ -41,7 +41,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+
+// IMPORT THE NEW GLOBAL WORKSPACE CONTEXT
+import { useWorkspace } from "@/context/WorkspaceContext";
 
 export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -54,103 +56,23 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
  
-  // ==========================================
-  // REAL BACKEND WORKSPACE LOGIC
-  // ==========================================
-  const [workspaces, setWorkspaces] = useState<{_id: string, name: string}[]>([]);
-  const [activeWorkspace, setActiveWorkspace] = useState<{_id: string, name: string} | null>(null);
+  // Global Workspace Hook (Replaces all the local fetch/state logic!)
+  const { workspaces, activeWorkspace, switchWorkspace, createWorkspace } = useWorkspace();
+  
+  // Local states just for the Create Dialog UI
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
 
-  // 1. Fetch Workspaces on Mount
-  useEffect(() => {
-    const fetchWorkspaces = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        setWorkspaces(data);
-        
-        // Find the currently active one (we saved its ID in localStorage during login/switch)
-        const savedId = localStorage.getItem("activeWorkspaceId");
-        const active = data.find((w: any) => w._id === savedId) || data[0];
-        setActiveWorkspace(active);
-      } catch (err) {
-        console.error("Failed to load workspaces");
-      }
-    };
-    fetchWorkspaces();
-  }, []);
-
-  // 2. Handle Switch
-  const handleSwitchWorkspace = async (workspace: {_id: string, name: string}) => {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces/switch/${workspace._id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      const data = await res.json();
-      
-      // THE FIX: Overwrite the old token with the fresh one!
-      if (data.token) {
-        localStorage.setItem("token", data.token);
-      }
-      
-      setActiveWorkspace(workspace);
-      localStorage.setItem("activeWorkspaceId", workspace._id);
-      toast.success(`Switched to ${workspace.name}`);
-      
-      // Reload the page with the new token
-      window.location.reload(); 
-    } catch (err) {
-      toast.error("Failed to switch workspace");
-    }
-  };
-
-  // 3. Handle Create
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWorkspaceName.trim()) return;
-
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ name: newWorkspaceName })
-      });
-      
-      const data = await res.json();
-      
-      // THE FIX: Overwrite the old token with the fresh one!
-      if (data.token) {
-        localStorage.setItem("token", data.token);
-      }
-      
-      const newWorkspace = data.workspace; // Extract workspace from updated API response
-      
-      setWorkspaces([...workspaces, newWorkspace]);
-      setActiveWorkspace(newWorkspace);
-      localStorage.setItem("activeWorkspaceId", newWorkspace._id);
-      
-      setIsCreateWorkspaceOpen(false);
-      setNewWorkspaceName("");
-      toast.success(`Created ${newWorkspace.name}`);
-      
-      // Reload the page with the new token
-      window.location.reload();
-    } catch (err) {
-      toast.error("Failed to create workspace");
-    }
+    
+    await createWorkspace(newWorkspaceName);
+    
+    // Close the dialog and clear the input after creation
+    setIsCreateWorkspaceOpen(false);
+    setNewWorkspaceName("");
   };
-  // ==========================================
 
   const [theme, setTheme] = useState<'light' | 'dark'>(
     (localStorage.getItem('theme') as 'light' | 'dark') || 'light'
@@ -226,7 +148,6 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
                 <div className="bg-[#3b66f5] p-1.5 rounded-md flex-shrink-0">
                   <Building2 className="h-4 w-4 text-white" />
                 </div>
-                {/* Fixed to safely read the object's name property */}
                 <span className="truncate max-w-[130px] text-left">{activeWorkspace?.name || "Loading..."}</span>
               </div>
               <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
@@ -235,11 +156,11 @@ export const AppLayout = ({ children }: { children: React.ReactNode }) => {
             <DropdownMenuContent align="start" className="w-56 mt-2 dark:bg-gray-900 dark:border-gray-800">
               <DropdownMenuLabel className="text-xs text-gray-500 uppercase tracking-wider">Workspaces</DropdownMenuLabel>
               
-              {/* DYNAMICALLY MAP OVER SAVED WORKSPACE OBJECTS */}
+              {/* Maps over context workspaces */}
               {workspaces.map((workspace) => (
                 <DropdownMenuItem 
                   key={workspace._id}
-                  onClick={() => handleSwitchWorkspace(workspace)} 
+                  onClick={() => switchWorkspace(workspace)} 
                   className="flex items-center justify-between cursor-pointer py-2 dark:text-gray-200 dark:focus:bg-gray-800"
                 >
                   <div className="flex items-center gap-2 truncate">

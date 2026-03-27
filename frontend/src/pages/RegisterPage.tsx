@@ -7,33 +7,38 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { toast } from "sonner";
 import { Loader2, LayoutDashboard } from "lucide-react";
 
-const LoginPage = () => {
+const RegisterPage = () => {
   const navigate = useNavigate();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password.length < 6) return toast.error("Password must be at least 6 characters");
+    
     setIsLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/login`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Login failed");
+        // This will pop up the "This email is already registered" message!
+        throw new Error(data.message || "Registration failed");
       }
 
+      // Save token and redirect to onboarding to create their first workspace
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       
-      toast.success("Logged in successfully!");
-      navigate("/dashboard");
+      toast.success("Account created successfully!");
+      navigate("/onboarding"); 
       
     } catch (error: any) {
       toast.error(error.message);
@@ -51,13 +56,24 @@ const LoginPage = () => {
               <LayoutDashboard className="h-7 w-7 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold dark:text-gray-100">Welcome back</CardTitle>
+          <CardTitle className="text-2xl font-bold dark:text-gray-100">Create an account</CardTitle>
           <CardDescription className="dark:text-gray-400">
-            Enter your credentials to access your workspace.
+            Enter your details below to get started.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="dark:text-gray-300">Full Name</Label>
+              <Input 
+                id="name" 
+                placeholder="John Doe" 
+                required 
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 focus-visible:ring-[#3b66f5]"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email" className="dark:text-gray-300">Email Address</Label>
               <Input 
@@ -71,9 +87,7 @@ const LoginPage = () => {
               />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="dark:text-gray-300">Password</Label>
-              </div>
+              <Label htmlFor="password" className="dark:text-gray-300">Password</Label>
               <Input 
                 id="password" 
                 type="password" 
@@ -86,25 +100,21 @@ const LoginPage = () => {
             </div>
             <Button type="submit" className="w-full bg-[#3b66f5] hover:bg-[#3157db] text-white py-5" disabled={isLoading}>
               {isLoading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
-              Sign In
+              Sign Up
             </Button>
           </form>
         </CardContent>
-        
-        {/* THIS IS THE EXPLANATION FOR STEP 5! */}
-        {/* We added this footer so users can click "Sign up" and go to the Register page */}
         <CardFooter className="flex justify-center border-t dark:border-gray-800 pt-6">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Don't have an account?{" "}
-            <Link to="/register" className="text-[#3b66f5] hover:underline font-medium">
-              Sign up
+            Already have an account?{" "}
+            <Link to="/login" className="text-[#3b66f5] hover:underline font-medium">
+              Log in
             </Link>
           </p>
         </CardFooter>
-
       </Card>
     </div>
   );
 };
 
-export default LoginPage;
+export default RegisterPage;

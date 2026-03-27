@@ -1,172 +1,155 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const User = require('../models/User');
-const Tenant = require('../models/Tenant');
 const authMiddleware = require('../middleware/authMiddleware');
-
-
 const router = express.Router();
 
+// Email Transporter for Password Resets
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
 // @route   POST /api/auth/register
-// @desc    Register a new tenant owner and workspace
+// @desc    Register a new user
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, companyName } = req.body;
+    const { name, email, password } = req.body;
 
-    // 1. Check if the user already exists
-    let existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists with this email' });
+    // 1. Check if user already exists
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: 'This email is already registered. Please log in.' });
     }
 
     // 2. Hash the password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. Create the Tenant (Workspace) first
-    const newTenant = new Tenant({
-      name: companyName || `${name}'s Workspace`,
-    });
-    const savedTenant = await newTenant.save();
-
-    // 4. Create the User and link them to the Tenant
-    const newUser = new User({
+    // 3. Create the user
+    user = new User({
       name,
       email,
       password: hashedPassword,
-      role: 'owner', // The person registering the workspace is the owner
-      tenantId: savedTenant._id
-    });
-    const savedUser = await newUser.save();
-
-    // 5. Generate a JWT Token
-    // You should add a JWT_SECRET to your .env file!
-    const payload = {
-      user: {
-        id: savedUser._id,
-        tenantId: savedTenant._id,
-        role: savedUser.role
-      }
-    };
-
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '1d' });
-
-    // 6. Send the response
-    res.status(201).json({
-      message: 'Registration successful',
-      token,
-      user: { id: savedUser._id, name: savedUser.name, email: savedUser.email }
+      role: 'owner' // First time registering, they own their first workspace
     });
 
+    await user.save();
+
+    // 4. Generate Token
+    const payload = { user: { id: user._id, tenantId: user.tenantId, role: user.role } };
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '30d' });
+
+    res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {
-    console.error('Registration error:', err);
+    console.error(err);
     res.status(500).json({ message: 'Server error during registration' });
   }
 });
 
 // @route   POST /api/auth/login
-// @desc    Authenticate user and get token
+// @desc    Authenticate user & get token
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    let user = await User.findOne({ email });
 
-    // 1. Check if the user exists
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
+    if (!user) return res.status(400).json({ message: 'Invalid Credentials' });
 
-    // 2. Check if the password matches
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+    if (!isMatch) return res.status(400).json({ message: 'Invalid Credentials' });
+
+    const payload = { user: { id: user._id, tenantId: user.tenantId, role: user.role } };
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '30d' });
+
+    res.json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role, tenantId: user.tenantId } });
+  } catch (err) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+});
+
+// @route   POST /api/auth/forgot-password
+// @desc    Send password reset email
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: 'No account with that email found.' });
     }
 
-    // 3. Generate a JWT Token
-    const payload = {
-      user: {
-        id: user._id,
-        tenantId: user.tenantId,
-        role: user.role
-      }
+    // Generate a random reset token
+    const resetToken = crypto.randomBytes(20).toString('hex');
+
+    // Save token and set expiration to 1 hour from now
+    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.resetPasswordExpire = Date.now() + 3600000; 
+    await user.save();
+
+    // Create reset URL
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
+    const mailOptions = {
+      from: `"Acme Support" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: 'Password Reset Request',
+      html: `
+        <h3>You requested a password reset</h3>
+        <p>Click the link below to securely reset your password. This link is valid for 1 hour.</p>
+        <a href="${resetUrl}" style="background-color: #3b66f5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset Password</a>
+      `
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '1d' });
+    await transporter.sendMail(mailOptions);
+    res.json({ message: 'Password reset email sent!' });
 
-    // 4. Send the response
-    res.status(200).json({
-      message: 'Login successful',
-      token,
-      user: { 
-        id: user._id, 
-        name: user.name, 
-        email: user.email,
-        role: user.role,
-        tenantId: user.tenantId
-      }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Email could not be sent' });
+  }
+});
+
+// @route   PUT /api/auth/reset-password/:token
+// @desc    Reset password using token
+router.put('/reset-password/:token', async (req, res) => {
+  try {
+    // Hash the token from the URL to match the one saved in the database
+    const resetPasswordToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() } // Ensure token hasn't expired
     });
 
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ message: 'Server error during login' });
-  }
-});
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
 
-
-// @route   GET /api/auth/me
-// @desc    Get logged in user details
-// @access  Private (Requires Token)
-router.get('/me', authMiddleware, async (req, res) => {
-  try {
-    // req.user comes from the middleware! We use .select('-password') so we don't send the hash back.
-    const user = await User.findById(req.user.id).select('-password');
-    res.json(user);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
-});
-
-
-
-
-// @route   PUT /api/auth/profile
-// @desc    Update user profile (name, email)
-router.put('/profile', authMiddleware, async (req, res) => {
-  try {
-    const { name, email } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    user.name = name || user.name;
-    user.email = email || user.email;
-    await user.save();
-
-    res.json({ _id: user._id, name: user.name, email: user.email, role: user.role });
-  } catch (err) {
-    console.error('Error updating profile:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// @route   PUT /api/auth/password
-// @desc    Update user password
-router.put('/password', authMiddleware, async (req, res) => {
-  try {
-    const { password } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    // Hash the new password before saving it
+    // Hash the new password and save
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
+    user.password = await bcrypt.hash(req.body.password, salt);
+    
+    // Clear the reset tokens
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
     await user.save();
 
-    res.json({ message: 'Password updated successfully' });
+    res.json({ message: 'Password reset successful! You can now log in.' });
   } catch (err) {
-    console.error('Error updating password:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// ... YOUR EXISTING PROFILE AND PASSWORD PUT ROUTES GO HERE ...
+router.put('/profile', authMiddleware, async (req, res) => { /* existing logic */ });
+router.put('/password', authMiddleware, async (req, res) => { /* existing logic */ });
+
 module.exports = router;

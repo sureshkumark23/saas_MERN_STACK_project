@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Folder, CheckSquare, Users, Activity, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW IMPORT
 
 interface DashboardStats {
   projectCount: number;
@@ -50,12 +51,15 @@ const DashboardPage = () => {
   const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) setUser(JSON.parse(storedUser));
 
     const fetchStats = async () => {
+      setIsLoading(true);
       try {
         const token = localStorage.getItem("token");
         const response = await fetch(`${import.meta.env.VITE_API_URL}/dashboard/stats`, {
@@ -71,8 +75,11 @@ const DashboardPage = () => {
       }
     };
 
-    fetchStats();
-  }, []);
+    // <-- NEW MAGIC: Only fetch if we have an active workspace
+    if (activeWorkspace) {
+      fetchStats();
+    }
+  }, [activeWorkspace]); // <-- NEW DEPENDENCY
 
   return (
     <AppLayout>
@@ -91,10 +98,7 @@ const DashboardPage = () => {
           <div className="flex justify-center py-20"><Loader2 className="h-10 w-10 animate-spin text-primary/50" /></div>
         ) : (
           <>
-            {/* NEW 2x2 GRID STAT CARDS - THEMED */}
             <div className="grid gap-4 md:grid-cols-2">
-              
-              {/* Total Projects */}
               <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
@@ -108,7 +112,6 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
               
-              {/* Active Tasks */}
               <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
@@ -122,7 +125,6 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* Team Members */}
               <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
@@ -136,7 +138,6 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* Completion Rate */}
               <Card className="border border-gray-200 dark:border-gray-800 shadow-sm rounded-xl bg-white dark:bg-gray-900">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start">
@@ -149,13 +150,9 @@ const DashboardPage = () => {
                   </div>
                 </CardContent>
               </Card>
-
             </div>
 
-            {/* Recent Activity & Active Projects Grid - THEMED */}
             <div className="grid gap-6 md:grid-cols-1">
-              
-              {/* RECENT ACTIVITY CARD */}
               <Card className="border border-gray-200 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 rounded-xl overflow-hidden mt-4">
                 <CardHeader className="pb-2 pt-6 px-6">
                   <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">Recent Activity</CardTitle>
@@ -190,7 +187,6 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* ACTIVE PROJECTS CARD */}
               <Card className="border border-gray-200 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 rounded-xl overflow-hidden mt-2">
                 <CardHeader className="pb-2 pt-6 px-6">
                   <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">Active Projects</CardTitle>
@@ -226,7 +222,6 @@ const DashboardPage = () => {
                   )}
                 </CardContent>
               </Card>
-
             </div>
           </>
         )}

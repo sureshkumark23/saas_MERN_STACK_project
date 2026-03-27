@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Plus, Loader2, LayoutGrid, List } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW IMPORT
 
 interface Project {
   _id: string;
@@ -33,7 +34,10 @@ const ProjectsPage = () => {
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
+
   const fetchProjects = async () => {
+    setIsLoading(true);
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(`${import.meta.env.VITE_API_URL}/projects`, {
@@ -49,7 +53,12 @@ const ProjectsPage = () => {
     }
   };
 
-  useEffect(() => { fetchProjects(); }, []);
+  // <-- NEW MAGIC: Reacts to activeWorkspace changing
+  useEffect(() => { 
+    if (activeWorkspace) {
+      fetchProjects(); 
+    }
+  }, [activeWorkspace]); 
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +84,6 @@ const ProjectsPage = () => {
     <AppLayout>
       <div className="space-y-6 max-w-6xl mx-auto">
         
-        {/* HEADER SECTION - THEMED */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Projects</h1>
@@ -83,7 +91,6 @@ const ProjectsPage = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Grid/List Toggle - THEMED */}
             <div className="flex items-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md shadow-sm">
               <button 
                 onClick={() => setViewMode('grid')}
@@ -135,7 +142,6 @@ const ProjectsPage = () => {
           </div>
         </div>
 
-        {/* PROJECTS DISPLAY - THEMED CARDS */}
         {isLoading ? (
           <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>
         ) : projects.length === 0 ? (
@@ -152,8 +158,6 @@ const ProjectsPage = () => {
                 className="hover:shadow-md transition-all cursor-pointer border-gray-200 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-900"
               >
                 <CardContent className="p-6 flex flex-col h-full">
-                  
-                  {/* Top: Title & Status */}
                   <div className="flex justify-between items-start mb-2 gap-4">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-gray-100 line-clamp-1">{project.name}</h3>
                     <Badge 
@@ -167,13 +171,11 @@ const ProjectsPage = () => {
                     </Badge>
                   </div>
                   
-                  {/* Description */}
                   <p className="text-[15px] text-gray-500 dark:text-gray-400 mb-6 line-clamp-2 min-h-[44px]">
                     {project.description || "No description provided."}
                   </p>
 
                   <div className="mt-auto">
-                    {/* Progress Bar Area - THEMED */}
                     <div className="space-y-2 mb-6">
                       <div className="flex justify-between text-sm font-medium text-gray-500 dark:text-gray-400">
                         <span>{project.completedTasks}/{project.totalTasks} tasks</span>
@@ -187,7 +189,6 @@ const ProjectsPage = () => {
                       </div>
                     </div>
 
-                    {/* Team Avatars - THEMED */}
                     <div className="flex -space-x-2 overflow-hidden">
                       {project.assignees?.map((user, i) => (
                         <div 
