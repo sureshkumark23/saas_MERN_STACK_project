@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,9 @@ import { toast } from "sonner";
 import { Plus, Loader2, LayoutGrid, List } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW IMPORT
+import { useWorkspace } from "@/context/WorkspaceContext"; 
+import api from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Project {
   _id: string;
@@ -25,59 +27,47 @@ interface Project {
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { activeWorkspace } = useWorkspace();
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
+  // FETCH PROJECTS (useQuery)
+  const { data: projects = [], isLoading } = useQuery({
+    queryKey: ['projects', activeWorkspace?._id],
+    queryFn: async () => {
+      const { data } = await api.get('/projects');
+      return data;
+    },
+    enabled: !!activeWorkspace,
+  });
 
-  const fetchProjects = async () => {
-    setIsLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch projects");
-      setProjects(await response.json());
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // <-- NEW MAGIC: Reacts to activeWorkspace changing
-  useEffect(() => { 
-    if (activeWorkspace) {
-      fetchProjects(); 
-    }
-  }, [activeWorkspace]); 
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, description }),
-      });
-      if (!response.ok) throw new Error("Failed to create project");
-
+  // CREATE PROJECT (useMutation)
+  const createProjectMutation = useMutation({
+    mutationFn: async (newProject: { name: string, description: string }) => {
+      const { data } = await api.post('/projects', newProject);
+      return data;
+    },
+    onSuccess: () => {
+      // Refresh the projects list instantly
+      queryClient.invalidateQueries({ queryKey: ['projects', activeWorkspace?._id] });
+      
       toast.success("Project created successfully!");
       setIsDialogOpen(false);
-      setName(""); setDescription("");
-      fetchProjects();
-    } catch (error: any) { toast.error(error.message); } 
-    finally { setIsSubmitting(false); }
+      setName(""); 
+      setDescription("");
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || "Failed to create project");
+    }
+  });
+
+  const handleCreateProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    createProjectMutation.mutate({ name, description });
   };
 
   return (
@@ -133,8 +123,11 @@ const ProjectsPage = () => {
                     />
                   </div>
                   <DialogFooter>
-                    <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
-                    <Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Creating..." : "Create Project"}</Button>
+                    <DialogClose asChild><Button type="button" variant="outline" className="dark:border-gray-700 dark:text-gray-300">Cancel</Button></DialogClose>
+                    <Button type="submit" disabled={createProjectMutation.isPending}>
+                      {createProjectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      {createProjectMutation.isPending ? "Creating..." : "Create Project"}
+                    </Button>
                   </DialogFooter>
                 </form>
               </DialogContent>
@@ -147,11 +140,11 @@ const ProjectsPage = () => {
         ) : projects.length === 0 ? (
           <div className="text-center py-20 bg-gray-50 dark:bg-gray-900 border border-dashed rounded-xl dark:border-gray-800">
             <p className="text-gray-500 dark:text-gray-400 mb-4">You haven't created any projects yet.</p>
-            <Button variant="outline" onClick={() => setIsDialogOpen(true)}>Create your first project</Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(true)} className="dark:border-gray-700 dark:text-gray-300">Create your first project</Button>
           </div>
         ) : (
           <div className={viewMode === 'grid' ? "grid gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-4"}>
-            {projects.map((project) => (
+            {projects.map((project: Project) => (
               <Card 
                 key={project._id} 
                 onClick={() => navigate(`/tasks?projectId=${project._id}`)}

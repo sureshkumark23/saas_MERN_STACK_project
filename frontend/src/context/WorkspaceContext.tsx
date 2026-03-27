@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { toast } from 'sonner';
+import api from '@/lib/api'; // <-- IMPORT YOUR NEW API CLIENT!
 
 interface Workspace {
   _id: string;
@@ -11,7 +12,7 @@ interface WorkspaceContextType {
   activeWorkspace: Workspace | null;
   switchWorkspace: (workspace: Workspace) => Promise<void>;
   createWorkspace: (name: string) => Promise<void>;
-  deleteWorkspace: (id: string) => Promise<void>; // <-- NEW FUNCTION DEFINITION
+  deleteWorkspace: (id: string) => Promise<void>;
   renameWorkspace: (id: string, newName: string) => Promise<void>;
 }
 
@@ -24,15 +25,12 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const fetchWorkspaces = async () => {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) return;
+        if (!localStorage.getItem("token")) return;
 
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        setWorkspaces(data);
+        // LOOK HOW CLEAN THIS IS NOW! 👇
+        const { data } = await api.get('/workspaces');
         
+        setWorkspaces(data);
         const savedId = localStorage.getItem("activeWorkspaceId");
         const active = data.find((w: any) => w._id === savedId) || data[0];
         setActiveWorkspace(active);
@@ -45,12 +43,8 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
 
   const switchWorkspace = async (workspace: Workspace) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces/switch/${workspace._id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
+      // NO MORE MANUAL TOKENS OR HEADERS! 👇
+      const { data } = await api.put(`/workspaces/switch/${workspace._id}`);
       
       if (data.token) localStorage.setItem("token", data.token);
       
@@ -64,13 +58,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
 
   const createWorkspace = async (name: string) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name })
-      });
-      const data = await res.json();
+      const { data } = await api.post('/workspaces', { name });
       
       if (data.token) localStorage.setItem("token", data.token);
       
@@ -84,24 +72,10 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // <-- NEW RENAME FUNCTION
   const renameWorkspace = async (id: string, newName: string) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: newName })
-      });
+      const { data } = await api.put(`/workspaces/${id}`, { name: newName });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || "Failed to rename workspace");
-      }
-
-      const data = await res.json();
-
-      // Instantly update the global state so the sidebar and headers change!
       const updatedWorkspaces = workspaces.map(w => w._id === id ? { ...w, name: data.workspace.name } : w);
       setWorkspaces(updatedWorkspaces);
 
@@ -111,45 +85,37 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
 
       toast.success("Workspace renamed successfully!");
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.response?.data?.message || "Failed to rename workspace");
       throw err;
     }
   };
 
-  // <-- NEW DELETE FUNCTION
   const deleteWorkspace = async (id: string) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/workspaces/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/workspaces/${id}`);
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || "Failed to delete workspace");
-      }
+      toast.success("Workspace deleted successfully!");
 
-      // Remove the deleted workspace from our UI list
-      const updatedWorkspaces = workspaces.filter(w => w._id !== id);
-      setWorkspaces(updatedWorkspaces);
-
-      // If they deleted the workspace they are currently looking at, switch them to the first available one automatically!
-      if (activeWorkspace?._id === id && updatedWorkspaces.length > 0) {
-        await switchWorkspace(updatedWorkspaces[0]);
-      }
+      const remainingWorkspaces = workspaces.filter(w => w._id !== id);
       
-      toast.success("Workspace deleted successfully");
+      if (remainingWorkspaces.length > 0) {
+        localStorage.setItem("activeWorkspaceId", remainingWorkspaces[0]._id);
+      }
+
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 800);
+
     } catch (err: any) {
-      toast.error(err.message);
+      console.error("Deletion Error:", err);
+      toast.error(err.response?.data?.message || "Failed to delete workspace");
     }
   };
 
   return (
-   // ADD renameWorkspace to the value object!
-<WorkspaceContext.Provider value={{ workspaces, activeWorkspace, switchWorkspace, createWorkspace, deleteWorkspace, renameWorkspace }}>
-  {children}
-</WorkspaceContext.Provider>
+    <WorkspaceContext.Provider value={{ workspaces, activeWorkspace, switchWorkspace, createWorkspace, deleteWorkspace, renameWorkspace }}>
+      {children}
+    </WorkspaceContext.Provider>
   );
 };
 

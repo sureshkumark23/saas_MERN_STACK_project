@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Folder, CheckSquare, Users, Activity, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useWorkspace } from "@/context/WorkspaceContext"; // <-- NEW IMPORT
+import { useWorkspace } from "@/context/WorkspaceContext"; 
+import api from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
 
 interface DashboardStats {
   projectCount: number;
@@ -49,37 +51,26 @@ const getInitials = (name: string) => {
 
 const DashboardPage = () => {
   const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
+  const { activeWorkspace } = useWorkspace();
 
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) setUser(JSON.parse(storedUser));
+  }, []);
 
-    const fetchStats = async () => {
-      setIsLoading(true);
-      try {
-        const token = localStorage.getItem("token");
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/dashboard/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+  // REACT QUERY MAGIC: Fetches stats and caches them automatically based on the workspace ID
+  const { data: stats, isLoading, isError } = useQuery({
+    queryKey: ['dashboardStats', activeWorkspace?._id],
+    queryFn: async () => {
+      const { data } = await api.get('/dashboard/stats');
+      return data;
+    },
+    enabled: !!activeWorkspace, // Only fetch when a workspace is loaded
+  });
 
-        if (!response.ok) throw new Error("Failed to fetch dashboard stats");
-        setStats(await response.json());
-      } catch (error: any) {
-        toast.error(error.message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    // <-- NEW MAGIC: Only fetch if we have an active workspace
-    if (activeWorkspace) {
-      fetchStats();
-    }
-  }, [activeWorkspace]); // <-- NEW DEPENDENCY
+  if (isError) {
+    toast.error("Failed to fetch dashboard stats");
+  }
 
   return (
     <AppLayout>

@@ -2,6 +2,8 @@ const express = require('express');
 const jwt = require('jsonwebtoken'); 
 const Tenant = require('../models/Tenant');
 const User = require('../models/User');
+const Project = require('../models/Project');
+const Task = require('../models/Task');
 const authMiddleware = require('../middleware/authMiddleware');
 const router = express.Router();
 
@@ -71,35 +73,57 @@ router.put('/switch/:id', authMiddleware, async (req, res) => {
 // @desc    Delete a workspace (OWNER ONLY)
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    // 1. Check if the user is the owner
+    const workspaceId = req.params.id;
+    const user = await User.findById(req.user.id);
+
+    // 1. Strict Owner Check
     if (req.user.role !== 'owner') {
       return res.status(403).json({ message: 'Unauthorized. Only the workspace owner can delete it.' });
     }
 
-    const workspaceId = req.params.id;
-    const user = await User.findById(req.user.id);
-
-    // 2. Prevent deleting if it's their ONLY workspace
-    if (user.workspaces.length <= 1) {
+    // 2. Prevent deleting their only workspace
+    if (!user.workspaces || user.workspaces.length <= 1) {
       return res.status(400).json({ message: 'You cannot delete your only workspace. Please create another one first.' });
     }
 
-    // 3. Delete the Workspace document
+    // 3. Move user to safe workspace FIRST before deleting
+    if (user.tenantId.toString() === workspaceId) {
+      const safeWorkspace = user.workspaces.find(id => id.toString() !== workspaceId);
+      user.tenantId = safeWorkspace;
+      await user.save();
+    }
+
+    // ==========================================
+    // 4. THE CASCADING DELETE 🧹
+    // ==========================================
+    // Find all projects that belong to this workspace
+    const workspaceProjects = await Project.find({ tenantId: workspaceId });
+    const projectIds = workspaceProjects.map(p => p._id);
+
+    // Delete ALL tasks that are linked to those projects
+    if (projectIds.length > 0) {
+      await Task.deleteMany({ projectId: { $in: projectIds } });
+    }
+
+    // Delete ALL projects in this workspace
+    await Project.deleteMany({ tenantId: workspaceId });
+    // ==========================================
+
+    // 5. Delete the Workspace document itself
     await Tenant.findByIdAndDelete(workspaceId);
 
-    // 4. Remove the workspace ID from ALL users' workspaces arrays
+    // 6. Remove the deleted workspace ID from ALL users' accounts
     await User.updateMany(
       { workspaces: workspaceId },
       { $pull: { workspaces: workspaceId } }
     );
 
-    res.json({ message: 'Workspace deleted successfully' });
+    res.json({ message: 'Workspace and all associated data deleted successfully' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error("Delete Workspace Error:", err);
+    res.status(500).json({ message: 'Server error while deleting workspace' });
   }
 });
-
 // @route   PUT /api/workspaces/:id
 // @desc    Rename a workspace (OWNER ONLY)
 router.put('/:id', authMiddleware, async (req, res) => {

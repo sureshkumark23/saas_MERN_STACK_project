@@ -1,3 +1,4 @@
+import api from "@/lib/api";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom"; 
 import { AppLayout } from "@/components/AppLayout";
@@ -43,36 +44,29 @@ const TasksPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { activeWorkspace } = useWorkspace(); // <-- NEW CONTEXT HOOK
-
-  const fetchData = async () => {
+const fetchData = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const headers = { Authorization: `Bearer ${token}` };
+      const fetchTasksUrl = urlProjectId ? `/tasks?projectId=${urlProjectId}` : `/tasks`;
 
-      const fetchTasksUrl = urlProjectId 
-        ? `${import.meta.env.VITE_API_URL}/tasks?projectId=${urlProjectId}`
-        : `${import.meta.env.VITE_API_URL}/tasks`;
-
+      // Axios automatically parses the JSON for both requests!
       const [tasksRes, projectsRes] = await Promise.all([
-        fetch(fetchTasksUrl, { headers }),
-        fetch(`${import.meta.env.VITE_API_URL}/projects`, { headers })
+        api.get(fetchTasksUrl),
+        api.get('/projects')
       ]);
-
-      if (!tasksRes.ok || !projectsRes.ok) throw new Error("Failed to fetch data");
       
-      setTasks(await tasksRes.json());
+      setTasks(tasksRes.data);
+      setProjects(projectsRes.data);
       
-      const loadedProjects = await projectsRes.json();
-      setProjects(loadedProjects);
-      
-      if (!urlProjectId && loadedProjects.length > 0 && !projectId) {
-        setProjectId(loadedProjects[0]._id);
+      if (!urlProjectId && projectsRes.data.length > 0 && !projectId) {
+        setProjectId(projectsRes.data[0]._id);
       }
-    } catch (error: any) { toast.error(error.message); } 
-    finally { setIsLoading(false); }
+    } catch (error: any) { 
+      toast.error(error.response?.data?.message || "Failed to fetch data"); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
-
   // <-- NEW MAGIC: Add activeWorkspace to dependency array
   useEffect(() => { 
     if (activeWorkspace) {
@@ -80,65 +74,63 @@ const TasksPage = () => {
     }
   }, [urlProjectId, activeWorkspace]); 
 
-  const handleCreateTask = async (e: React.FormEvent) => {
+
+const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!projectId) return toast.error("Please select a project.");
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/tasks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title, description, projectId, status, priority }),
-      });
-
-      if (!response.ok) throw new Error("Failed to create task");
+      await api.post('/tasks', { title, description, projectId, status, priority });
 
       toast.success("Task created!");
       setIsCreateDialogOpen(false);
       setTitle(""); setDescription(""); setStatus("todo"); setPriority("medium");
       fetchData();
-    } catch (error: any) { toast.error(error.message); } 
-    finally { setIsSubmitting(false); }
+    } catch (error: any) { 
+      toast.error(error.response?.data?.message || "Failed to create task"); 
+    } finally { 
+      setIsSubmitting(false); 
+    }
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTask || !newComment.trim()) return;
     try {
-      const token = localStorage.getItem("token");
       const user = JSON.parse(localStorage.getItem("user") || "{}");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/tasks/${selectedTask._id}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ text: newComment, userName: user.name }),
+      const { data: updatedTask } = await api.post(`/tasks/${selectedTask._id}/comments`, { 
+        text: newComment, 
+        userName: user.name 
       });
-      if (!response.ok) throw new Error("Failed to post comment");
-      const updatedTask = await response.json();
+      
       setTasks(prev => prev.map(t => t._id === updatedTask._id ? updatedTask : t));
       setSelectedTask(updatedTask);
       setNewComment("");
-    } catch (error: any) { toast.error(error.message); }
+    } catch (error: any) { 
+      toast.error(error.response?.data?.message || "Failed to post comment"); 
+    }
   };
+
+
 
   const handleDragStart = (e: React.DragEvent, taskId: string) => e.dataTransfer.setData("taskId", taskId);
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+
   const handleDrop = async (e: React.DragEvent, newStatus: string) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData("taskId");
     const task = tasks.find(t => t._id === taskId);
     if (!task || task.status === newStatus) return;
 
+    // Optimistic UI update
     setTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
     try {
-      const token = localStorage.getItem("token");
-      await fetch(`${import.meta.env.VITE_API_URL}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: newStatus }),
-      });
-    } catch { toast.error("Failed to save move."); fetchData(); }
+      await api.patch(`/tasks/${taskId}`, { status: newStatus });
+    } catch (error: any) { 
+      toast.error(error.response?.data?.message || "Failed to save move."); 
+      fetchData(); // Revert on failure
+    }
   };
 
   const getPriorityColor = (p: string) => {

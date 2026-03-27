@@ -1,3 +1,4 @@
+import api from "@/lib/api";
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -38,17 +39,10 @@ const TeamPage = () => {
   const fetchTeam = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/team`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch team members");
-      
-      const data = await response.json();
+      const { data } = await api.get('/team');
       setMembers(data);
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || "Failed to fetch team members");
     } finally {
       setIsLoading(false);
     }
@@ -62,42 +56,23 @@ const TeamPage = () => {
   }, [activeWorkspace]);
 
   // Handle inviting a new team member
-  const handleInviteMember = async (e: React.FormEvent) => {
+ const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/team/invite`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name, email, role }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) throw new Error(data.message || "Failed to invite member");
+      await api.post('/team/invite', { name, email, role });
 
       toast.success(`${name} has been added to the workspace!`);
       setIsDialogOpen(false);
-      
-      // Reset form
-      setName("");
-      setEmail("");
-      setRole("member");
-      
-      // Refresh the team list
+      setName(""); setEmail(""); setRole("member");
       fetchTeam();
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || "Failed to invite member");
     } finally {
       setIsSubmitting(false);
     }
   };
-
   // Helper to render role badges nicely with Dark Mode support
   const RoleBadge = ({ role }: { role: string }) => {
     switch(role) {
