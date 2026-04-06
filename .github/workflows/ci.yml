@@ -1,0 +1,58 @@
+name: MERN CI Pipeline
+
+# 1. TRIGGERS: When should this pipeline run?
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  # 2. BACKEND CHECS
+  backend-ci:
+    name: Backend Build & Verify
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend # Tells GitHub to run commands inside the backend folder
+        
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: './backend/package-lock.json'
+          
+      - name: Install Dependencies
+        run: npm ci # 'ci' is faster and stricter than 'install' for automated servers
+
+  # 3. FRONTEND CHECKS
+  frontend-ci:
+    name: Frontend Build & Verify
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend # Tells GitHub to run commands inside the frontend folder
+        
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Verify TypeScript Build
+        run: npm run build
+        env:
+          VITE_API_URL: http://localhost:5000/api # Mock env var just to satisfy Vite during the build step
